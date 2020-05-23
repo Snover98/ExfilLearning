@@ -3,19 +3,20 @@ import abc
 
 from typing import Iterable, List, Optional, Tuple
 
+from ExfilData import ExfilData, DataTextureEnum
 from NetworkIO import BaseNetworkIO
 from Protocols import Layer4Protocol
 
 
 class BaseExfilPlanner(abc.ABC):
-    def __init__(self, exfil_data: bytes, network_io: BaseNetworkIO, baseline_data: pd.DataFrame):
-        self.exfil_data: bytes = exfil_data
+    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: pd.DataFrame):
+        self.exfil_data: ExfilData = exfil_data
         self.network_io: BaseNetworkIO = network_io
         self.baseline_data: pd.DataFrame = baseline_data
 
     def send_over_network_io(self, current_data_to_exfil: bytes, selected_proto: Optional[Layer4Protocol]) -> bool:
         if selected_proto is not None:
-            return self.network_io.send(current_data_to_exfil, selected_proto)
+            return self.network_io.send(current_data_to_exfil, selected_proto, self.exfil_data.data_texture)
         else:
             return False
 
@@ -33,7 +34,7 @@ class BaseExfilPlanner(abc.ABC):
 
     @abc.abstractmethod
     def split_exfil_data(self) -> Iterable[bytes]:
-        return [self.exfil_data]
+        return [self.exfil_data.data_to_exfiltrate]
 
     @abc.abstractmethod
     def select(self, current_data_to_exfil: bytes) -> Optional[Layer4Protocol]:
