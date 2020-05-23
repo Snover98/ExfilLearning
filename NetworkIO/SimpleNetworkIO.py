@@ -5,6 +5,8 @@ from Protocols import Layer4Protocol
 from ExfilData import DataTextureEnum
 from NetworkIO.BaseNetworkIO import BaseNetworkIO
 
+from typing import Optional
+
 
 class AllTrafficNetworkIO(BaseNetworkIO):
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
@@ -17,7 +19,7 @@ class NoTrafficNetworkIO(BaseNetworkIO):
 
 
 class OnlyPortProtoNetworkIO(BaseNetworkIO):
-    def __init__(self, baseline_data: pd.DataFrame, allowed_proto: Layer4Protocol):
+    def __init__(self, allowed_proto: Layer4Protocol, baseline_data: Optional[pd.DataFrame] = None):
         super().__init__(baseline_data)
         self.allowed_proto: Layer4Protocol = allowed_proto
 
@@ -29,7 +31,7 @@ class OnlyPortProtoNetworkIO(BaseNetworkIO):
 
 
 class RandomXPercentFailNetworkIO(BaseNetworkIO):
-    def __init__(self, baseline_data: pd.DataFrame, fail_chance: float):
+    def __init__(self, fail_chance: float, baseline_data: Optional[pd.DataFrame] = None):
         super().__init__(baseline_data)
         self.fail_chance: float = fail_chance
 

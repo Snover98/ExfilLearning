@@ -19,17 +19,22 @@ def split_bytes_to_equal_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]
 
 
 class NaiveXPercentExfilPlanner(BaseExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: pd.DataFrame,
+    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: Optional[pd.DataFrame] = None,
                  max_deviation_from_protos: float = .1):
         super().__init__(exfil_data, network_io, baseline_data)
         self.max_deviation_from_protos: float = max_deviation_from_protos
 
         self.__protocols_planned: List[Layer4Protocol] = list()
         self.__amounts_left_per_protocol: List[int] = list()
+        if self.baseline_data is not None:
+            self.__plan_amounts()
+
+    def set_baseline_data(self, baseline_data: pd.DataFrame):
+        self.baseline_data = baseline_data
         self.__plan_amounts()
 
     def __str__(self) -> str:
-        return f"Naive{self.max_deviation_from_protos*100}PercentExfilPlanner"
+        return f"Naive{self.max_deviation_from_protos * 100}PercentExfilPlanner"
 
     def __peek_current_proto_amount(self) -> Tuple[Layer4Protocol, int]:
         return self.__protocols_planned[0], self.__amounts_left_per_protocol[0]
@@ -79,8 +84,8 @@ class NaiveXPercentExfilPlanner(BaseExfilPlanner):
 
 
 class NaiveSingleProtocolExfilPlanner(BaseExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: pd.DataFrame,
-                 chosen_protocol: Layer4Protocol):
+    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, chosen_protocol: Layer4Protocol,
+                 baseline_data: Optional[pd.DataFrame] = None):
         super().__init__(exfil_data, network_io, baseline_data)
         self.chosen_protocol: Layer4Protocol = chosen_protocol
 
@@ -89,14 +94,13 @@ class NaiveSingleProtocolExfilPlanner(BaseExfilPlanner):
 
 
 class NaiveMaxDataProtocolExfilPlanner(NaiveSingleProtocolExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: pd.DataFrame):
-        super().__init__(exfil_data, network_io, baseline_data,
-                         str_to_layer4_proto(baseline_data.total_bytes.idxmax()))
+    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: Optional[pd.DataFrame] = None):
+        super().__init__(exfil_data, network_io, str_to_layer4_proto(baseline_data.total_bytes.idxmax()), baseline_data)
 
 
 class NaiveRandomWeightsExfilPlanner(BaseExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: pd.DataFrame,
-                 weights: List[Union[int, float]], num_packets_for_split: int = 10):
+    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, weights: List[Union[int, float]],
+                 baseline_data: Optional[pd.DataFrame] = None, num_packets_for_split: int = 10):
         super().__init__(exfil_data, network_io, baseline_data)
 
         num_packets_for_split = min(num_packets_for_split, len(exfil_data.data_to_exfiltrate))
@@ -115,12 +119,12 @@ class NaiveRandomWeightsExfilPlanner(BaseExfilPlanner):
 
 
 class NaiveRandomUniformExfilPlanner(NaiveRandomWeightsExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: pd.DataFrame):
+    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: Optional[pd.DataFrame] = None):
         weights: List[int] = [1 for _ in range(len(baseline_data.index))]
-        super().__init__(exfil_data, network_io, baseline_data, weights=weights)
+        super().__init__(exfil_data, network_io, baseline_data=baseline_data, weights=weights)
 
 
 class NaiveProportionalWeightsRandomExfilPlanner(NaiveRandomWeightsExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: pd.DataFrame):
+    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: Optional[pd.DataFrame] = None):
         weights: List[Union[int, float]] = baseline_data.total_bytes.values.tolist()
-        super().__init__(exfil_data, network_io, baseline_data, weights=weights)
+        super().__init__(exfil_data, network_io, baseline_data=baseline_data, weights=weights)

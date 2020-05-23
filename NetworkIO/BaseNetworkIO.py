@@ -5,14 +5,19 @@ import abc
 from Protocols import Layer4Protocol
 from ExfilData import DataTextureEnum
 
+from typing import Optional
+
 
 class BaseNetworkIO(abc.ABC):
-    def __init__(self, baseline_data: pd.DataFrame):
+    def __init__(self, baseline_data: Optional[pd.DataFrame] = None):
         self.baseline_data: pd.DataFrame = baseline_data
 
     @abc.abstractmethod
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         pass
+
+    def set_baseline_data(self, baseline_data: pd.DataFrame):
+        self.baseline_data = baseline_data
 
     def __call__(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return self.send(data, proto, data_texture)
