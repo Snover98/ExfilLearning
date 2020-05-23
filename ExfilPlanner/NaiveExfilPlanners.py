@@ -161,4 +161,4 @@ class NaiveProportionalWeightsRandomExfilPlanner(NaiveRandomWeightsExfilPlanner)
 
     def set_baseline_data(self, baseline_data: pd.DataFrame):
         super().set_baseline_data(baseline_data)
-        self.weights: List[int] = [0 for _ in range(len(baseline_data.index))]
+        self.weights: List[Union[int, float]] = baseline_data.total_bytes.values.tolist()
