@@ -24,3 +24,6 @@ class BaseNetworkIO(abc.ABC):
 
     def __str__(self) -> str:
         return type(self).__name__
+
+    def reset(self):
+        pass
