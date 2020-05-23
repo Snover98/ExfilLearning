@@ -72,8 +72,7 @@ class NaiveXPercentExfilPlanner(BaseExfilPlanner):
         split by the greatest common denominator of the planned amounts
         """
         planned_amounts_gcd: int = reduce(math.gcd, self.__amounts_left_per_protocol)
-        for chunk in split_bytes_to_equal_chunks(self.exfil_data.data_to_exfiltrate, planned_amounts_gcd):
-            yield chunk
+        return split_bytes_to_equal_chunks(self.exfil_data.data_to_exfiltrate, planned_amounts_gcd)
 
 
 class NaiveSingleProtocolExfilPlanner(BaseExfilPlanner):
@@ -112,8 +111,7 @@ class NaiveRandomWeightsExfilPlanner(BaseExfilPlanner):
 
     def split_exfil_data(self) -> Iterable[bytes]:
         packet_size: int = math.ceil(len(self.exfil_data.data_to_exfiltrate) / self.num_packets_for_split)
-        for chunk in split_bytes_to_equal_chunks(self.exfil_data.data_to_exfiltrate, packet_size):
-            yield chunk
+        return split_bytes_to_equal_chunks(self.exfil_data.data_to_exfiltrate, packet_size)
 
 
 class NaiveRandomUniformExfilPlanner(NaiveRandomWeightsExfilPlanner):
