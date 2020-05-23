@@ -27,11 +27,11 @@ class NaiveXPercentExfilPlanner(BaseExfilPlanner):
         self.protocols_planned: List[Layer4Protocol] = list()
         self.amounts_left_per_protocol: List[int] = list()
         if self.baseline_data is not None:
-            self.plan_amounts()
+            self.reset()
 
     def set_baseline_data(self, baseline_data: pd.DataFrame):
         self.baseline_data = baseline_data
-        self.plan_amounts()
+        self.reset()
 
     def __str__(self) -> str:
         return f"Naive{self.max_deviation_from_protos * 100}PercentExfilPlanner"
@@ -52,10 +52,10 @@ class NaiveXPercentExfilPlanner(BaseExfilPlanner):
         if self.amounts_left_per_protocol[0] <= 0:
             self.pop_current_proto_amount()
 
-    def plan_amounts(self):
+    def reset(self):
         self.protocols_planned = [Layer4Protocol(ProtocolEnum(proto.split(":")[0]), int(proto.split(":")[1])) for
                                   proto in self.baseline_data.index]
-        self.amounts_left_per_protocol = (self.baseline_data['total_bytes'] * self.max_deviation_from_protos).astype(
+        self.amounts_left_per_protocol = (self.baseline_data.total_bytes * self.max_deviation_from_protos).astype(
             int).values.tolist()
 
     def cycle_find_sufficient_amount(self, cur_amount: int) -> bool:
@@ -81,9 +81,6 @@ class NaiveXPercentExfilPlanner(BaseExfilPlanner):
         """
         planned_amounts_gcd: int = reduce(math.gcd, self.amounts_left_per_protocol)
         return split_bytes_to_equal_chunks(self.exfil_data.data_to_exfiltrate, planned_amounts_gcd)
-
-    def plan(self):
-        self.plan_amounts()
 
 
 class NaiveSingleProtocolExfilPlanner(BaseExfilPlanner):
@@ -116,15 +113,15 @@ class NaiveRandomWeightsExfilPlanner(BaseExfilPlanner):
                  num_packets_for_split: int = 10):
         super().__init__(exfil_data, network_io, baseline_data)
 
-        if self.exfil_data is not None:
-            num_packets_for_split = min(num_packets_for_split, len(exfil_data.data_to_exfiltrate))
         self.num_packets_for_split: int = num_packets_for_split
+        if self.exfil_data is not None:
+            self.set_exfil_data(exfil_data)
 
         self.weights: List[Union[int, float]] = weights
+
+        self.protocols: List[Layer4Protocol] = list()
         if baseline_data is not None:
             self.protocols: List[Layer4Protocol] = [str_to_layer4_proto(proto_str) for proto_str in baseline_data.index]
-        else:
-            self.protocols: List[Layer4Protocol] = list()
 
     def set_baseline_data(self, baseline_data: pd.DataFrame):
         self.baseline_data = baseline_data

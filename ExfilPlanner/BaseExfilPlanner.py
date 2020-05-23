@@ -25,7 +25,7 @@ class BaseExfilPlanner(abc.ABC):
         else:
             return False
 
-    def execute(self) -> List[Tuple[Optional[Layer4Protocol], bool]]:
+    def execute(self, return_on_first_fail: bool = False) -> List[Tuple[Optional[Layer4Protocol], bool]]:
         if self.exfil_data is None:
             print(f"WARNING: no exfil data set for planner {self.__str__()} - returning False")
             return [(None, False)]
@@ -35,6 +35,8 @@ class BaseExfilPlanner(abc.ABC):
             selected_proto: Optional[Layer4Protocol] = self.select(current_data_to_exfil)
             current_reward: bool = self.send_over_network_io(current_data_to_exfil, selected_proto)
             action_reward_list.append((selected_proto, current_reward))
+            if return_on_first_fail and current_reward is False:
+                break
 
         return action_reward_list
 
@@ -56,7 +58,7 @@ class BaseExfilPlanner(abc.ABC):
     def split_exfil_data(self) -> Iterable[bytes]:
         return [self.exfil_data.data_to_exfiltrate]
 
-    def plan(self):
+    def reset(self):
         pass
 
     @abc.abstractmethod
