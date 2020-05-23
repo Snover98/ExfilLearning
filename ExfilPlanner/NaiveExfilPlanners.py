@@ -19,8 +19,8 @@ def split_bytes_to_equal_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]
 
 
 class NaiveXPercentExfilPlanner(BaseExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: Optional[pd.DataFrame] = None,
-                 max_deviation_from_protos: float = .1):
+    def __init__(self, exfil_data: ExfilData, network_io: Optional[BaseNetworkIO] = None,
+                 baseline_data: Optional[pd.DataFrame] = None, max_deviation_from_protos: float = .1):
         super().__init__(exfil_data, network_io, baseline_data)
         self.max_deviation_from_protos: float = max_deviation_from_protos
 
@@ -84,7 +84,8 @@ class NaiveXPercentExfilPlanner(BaseExfilPlanner):
 
 
 class NaiveSingleProtocolExfilPlanner(BaseExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, chosen_protocol: Layer4Protocol,
+    def __init__(self, exfil_data: ExfilData, chosen_protocol: Layer4Protocol,
+                 network_io: Optional[BaseNetworkIO] = None,
                  baseline_data: Optional[pd.DataFrame] = None):
         super().__init__(exfil_data, network_io, baseline_data)
         self.chosen_protocol: Layer4Protocol = chosen_protocol
@@ -94,13 +95,15 @@ class NaiveSingleProtocolExfilPlanner(BaseExfilPlanner):
 
 
 class NaiveMaxDataProtocolExfilPlanner(NaiveSingleProtocolExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: Optional[pd.DataFrame] = None):
-        super().__init__(exfil_data, network_io, str_to_layer4_proto(baseline_data.total_bytes.idxmax()), baseline_data)
+    def __init__(self, exfil_data: ExfilData, network_io: Optional[BaseNetworkIO] = None,
+                 baseline_data: Optional[pd.DataFrame] = None):
+        super().__init__(exfil_data, str_to_layer4_proto(baseline_data.total_bytes.idxmax()), network_io, baseline_data)
 
 
 class NaiveRandomWeightsExfilPlanner(BaseExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, weights: List[Union[int, float]],
-                 baseline_data: Optional[pd.DataFrame] = None, num_packets_for_split: int = 10):
+    def __init__(self, exfil_data: ExfilData, weights: List[Union[int, float]],
+                 network_io: Optional[BaseNetworkIO] = None, baseline_data: Optional[pd.DataFrame] = None,
+                 num_packets_for_split: int = 10):
         super().__init__(exfil_data, network_io, baseline_data)
 
         num_packets_for_split = min(num_packets_for_split, len(exfil_data.data_to_exfiltrate))
@@ -119,12 +122,14 @@ class NaiveRandomWeightsExfilPlanner(BaseExfilPlanner):
 
 
 class NaiveRandomUniformExfilPlanner(NaiveRandomWeightsExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: Optional[pd.DataFrame] = None):
+    def __init__(self, exfil_data: ExfilData, network_io: Optional[BaseNetworkIO] = None,
+                 baseline_data: Optional[pd.DataFrame] = None):
         weights: List[int] = [1 for _ in range(len(baseline_data.index))]
-        super().__init__(exfil_data, network_io, baseline_data=baseline_data, weights=weights)
+        super().__init__(exfil_data, network_io=network_io, baseline_data=baseline_data, weights=weights)
 
 
 class NaiveProportionalWeightsRandomExfilPlanner(NaiveRandomWeightsExfilPlanner):
-    def __init__(self, exfil_data: ExfilData, network_io: BaseNetworkIO, baseline_data: Optional[pd.DataFrame] = None):
+    def __init__(self, exfil_data: ExfilData, network_io: Optional[BaseNetworkIO] = None,
+                 baseline_data: Optional[pd.DataFrame] = None):
         weights: List[Union[int, float]] = baseline_data.total_bytes.values.tolist()
-        super().__init__(exfil_data, network_io, baseline_data=baseline_data, weights=weights)
+        super().__init__(exfil_data, network_io=network_io, baseline_data=baseline_data, weights=weights)
