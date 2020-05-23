@@ -74,7 +74,7 @@ def main():
 
     grid_results: pd.DataFrame = generate_grid_data(baseline_data, data_sizes, data_textures, exfil_planners,
                                                     network_ios)
-    grid_results.to_csv(fr"{results_path}\planners_results.csv")
+    grid_results.to_csv(fr"{results_path}\planners_results.csv", index=False)
 
 
 if __name__ == "__main__":
