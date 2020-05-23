@@ -28,6 +28,9 @@ class NaiveXPercentExfilPlanner(BaseExfilPlanner):
         self.__amounts_left_per_protocol: List[int] = list()
         self.__plan_amounts()
 
+    def __str__(self) -> str:
+        return f"Naive{self.max_deviation_from_protos*100}PercentExfilPlanner"
+
     def __peek_current_proto_amount(self) -> Tuple[Layer4Protocol, int]:
         return self.__protocols_planned[0], self.__amounts_left_per_protocol[0]
 
@@ -81,6 +84,9 @@ class NaiveSingleProtocolExfilPlanner(BaseExfilPlanner):
         super().__init__(exfil_data, network_io, baseline_data)
         self.chosen_protocol: Layer4Protocol = chosen_protocol
 
+    def __str__(self) -> str:
+        return super().__str__()
+
     def select(self, current_data_to_exfil: bytes) -> Optional[Layer4Protocol]:
         return self.chosen_protocol
 
@@ -105,6 +111,9 @@ class NaiveRandomWeightsExfilPlanner(BaseExfilPlanner):
         self.weights: List[Union[int, float]] = weights
         self.protocols: List[Layer4Protocol] = [str_to_layer4_proto(proto_str) for proto_str in
                                                 self.baseline_data.index]
+
+    def __str__(self) -> str:
+        return super().__str__()
 
     def select(self, current_data_to_exfil: bytes) -> Optional[Layer4Protocol]:
         return random.choices(self.protocols, weights=self.weights)[0]

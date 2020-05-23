@@ -10,10 +10,16 @@ class AllTrafficNetworkIO(BaseNetworkIO):
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return True
 
+    def __str__(self) -> str:
+        return super().__str__()
+
 
 class NoTrafficNetworkIO(BaseNetworkIO):
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return False
+
+    def __str__(self) -> str:
+        return super().__str__()
 
 
 class OnlyPortProtoNetworkIO(BaseNetworkIO):
@@ -24,6 +30,9 @@ class OnlyPortProtoNetworkIO(BaseNetworkIO):
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return proto == self.allowed_proto
 
+    def __str__(self) -> str:
+        return f"Only{str(self.allowed_proto)}NetworkIO"
+
 
 class RandomXPercentFailNetworkIO(BaseNetworkIO):
     def __init__(self, baseline_data: pd.DataFrame, fail_chance: float):
@@ -32,3 +41,6 @@ class RandomXPercentFailNetworkIO(BaseNetworkIO):
 
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return random.uniform(0, 1) > self.fail_chance
+
+    def __str__(self) -> str:
+        return f"Random{self.fail_chance * 100}PercentFailNetworkIO"
