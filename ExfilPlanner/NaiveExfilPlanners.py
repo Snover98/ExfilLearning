@@ -96,7 +96,15 @@ class NaiveSingleProtocolExfilPlanner(BaseExfilPlanner):
 class NaiveMaxDataProtocolExfilPlanner(NaiveSingleProtocolExfilPlanner):
     def __init__(self, exfil_data: Optional[ExfilData] = None, network_io: Optional[BaseNetworkIO] = None,
                  baseline_data: Optional[pd.DataFrame] = None):
-        super().__init__(str_to_layer4_proto(baseline_data.total_bytes.idxmax()), exfil_data, network_io, baseline_data)
+        if baseline_data is None:
+            max_proto: Optional[Layer4Protocol] = None
+        else:
+            max_proto: Optional[Layer4Protocol] = str_to_layer4_proto(baseline_data.total_bytes.idxmax())
+        super().__init__(max_proto, exfil_data, network_io, baseline_data)
+
+    def set_baseline_data(self, baseline_data: pd.DataFrame):
+        self.baseline_data = baseline_data
+        self.chosen_protocol = str_to_layer4_proto(baseline_data.total_bytes.idxmax())
 
 
 class NaiveRandomWeightsExfilPlanner(BaseExfilPlanner):
@@ -105,14 +113,29 @@ class NaiveRandomWeightsExfilPlanner(BaseExfilPlanner):
                  num_packets_for_split: int = 10):
         super().__init__(exfil_data, network_io, baseline_data)
 
-        num_packets_for_split = min(num_packets_for_split, len(exfil_data.data_to_exfiltrate))
+        if self.exfil_data is not None:
+            num_packets_for_split = min(num_packets_for_split, len(exfil_data.data_to_exfiltrate))
         self.num_packets_for_split: int = num_packets_for_split
 
         self.weights: List[Union[int, float]] = weights
-        self.protocols: List[Layer4Protocol] = [str_to_layer4_proto(proto_str) for proto_str in
-                                                self.baseline_data.index]
+        if baseline_data is not None:
+            self.protocols: List[Layer4Protocol] = [str_to_layer4_proto(proto_str) for proto_str in baseline_data.index]
+        else:
+            self.protocols: List[Layer4Protocol] = list()
+
+    def set_baseline_data(self, baseline_data: pd.DataFrame):
+        self.baseline_data = baseline_data
+        self.protocols: List[Layer4Protocol] = [str_to_layer4_proto(proto_str) for proto_str in baseline_data.index]
+
+    def set_exfil_data(self, exfil_data: ExfilData):
+        self.exfil_data = exfil_data
+        self.num_packets_for_split: int = min(self.num_packets_for_split, len(exfil_data.data_to_exfiltrate))
 
     def select(self, current_data_to_exfil: bytes) -> Optional[Layer4Protocol]:
+        if self.baseline_data is None:
+            print(f"WARNING: no baseline data set for planner {self.__str__()} - returning None")
+            return None
+
         return random.choices(self.protocols, weights=self.weights)[0]
 
     def split_exfil_data(self) -> Iterable[bytes]:
@@ -130,5 +153,12 @@ class NaiveRandomUniformExfilPlanner(NaiveRandomWeightsExfilPlanner):
 class NaiveProportionalWeightsRandomExfilPlanner(NaiveRandomWeightsExfilPlanner):
     def __init__(self, exfil_data: Optional[ExfilData] = None, network_io: Optional[BaseNetworkIO] = None,
                  baseline_data: Optional[pd.DataFrame] = None):
-        weights: List[Union[int, float]] = baseline_data.total_bytes.values.tolist()
+        if baseline_data is not None:
+            weights: List[Union[int, float]] = baseline_data.total_bytes.values.tolist()
+        else:
+            weights: List[Union[int, float]] = list()
         super().__init__(exfil_data=exfil_data, network_io=network_io, baseline_data=baseline_data, weights=weights)
+
+    def set_baseline_data(self, baseline_data: pd.DataFrame):
+        super().set_baseline_data(baseline_data)
+        self.weights: List[int] = [0 for _ in range(len(baseline_data.index))]
