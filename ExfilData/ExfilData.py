@@ -1,6 +1,6 @@
 from typing import NamedTuple
 
-from .DataTexture import DataTextureEnum
+from ExfilData.DataTexture import DataTextureEnum
 
 
 class ExfilData(NamedTuple):

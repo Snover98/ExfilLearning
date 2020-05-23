@@ -1,4 +1,4 @@
-from .ProtocolClasses import Layer4Protocol, ProtocolEnum
+from Protocols.ProtocolClasses import Layer4Protocol, ProtocolEnum
 
 textual_protocols = {
     # SMTP
