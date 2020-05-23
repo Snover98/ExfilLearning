@@ -9,9 +9,9 @@ from Protocols import Layer4Protocol
 
 
 class BaseExfilPlanner(abc.ABC):
-    def __init__(self, exfil_data: ExfilData, network_io: Optional[BaseNetworkIO] = None,
+    def __init__(self, exfil_data: Optional[ExfilData] = None, network_io: Optional[BaseNetworkIO] = None,
                  baseline_data: Optional[pd.DataFrame] = None):
-        self.exfil_data: ExfilData = exfil_data
+        self.exfil_data: Optional[ExfilData] = exfil_data
         self.network_io: Optional[BaseNetworkIO] = network_io
         self.baseline_data: Optional[pd.DataFrame] = baseline_data
 
@@ -26,6 +26,10 @@ class BaseExfilPlanner(abc.ABC):
             return False
 
     def execute(self) -> List[Tuple[Optional[Layer4Protocol], bool]]:
+        if self.exfil_data is None:
+            print(f"WARNING: no exfil data set for planner {self.__str__()} - returning False")
+            return [(None, False)]
+
         action_reward_list: List[Tuple[Optional[Layer4Protocol], bool]] = list()
         for current_data_to_exfil in self.split_exfil_data():
             selected_proto: Optional[Layer4Protocol] = self.select(current_data_to_exfil)
@@ -45,6 +49,9 @@ class BaseExfilPlanner(abc.ABC):
 
     def set_network_io(self, network_io: BaseNetworkIO):
         self.network_io = network_io
+
+    def set_exfil_data(self, exfil_data: ExfilData):
+        self.exfil_data = exfil_data
 
     def split_exfil_data(self) -> Iterable[bytes]:
         return [self.exfil_data.data_to_exfiltrate]
