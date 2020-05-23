@@ -56,6 +56,9 @@ class BaseExfilPlanner(abc.ABC):
     def split_exfil_data(self) -> Iterable[bytes]:
         return [self.exfil_data.data_to_exfiltrate]
 
+    def plan(self):
+        pass
+
     @abc.abstractmethod
     def select(self, current_data_to_exfil: bytes) -> Optional[Layer4Protocol]:
         pass

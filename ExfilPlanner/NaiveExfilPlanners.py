@@ -24,53 +24,53 @@ class NaiveXPercentExfilPlanner(BaseExfilPlanner):
         super().__init__(exfil_data, network_io, baseline_data)
         self.max_deviation_from_protos: float = max_deviation_from_protos
 
-        self.__protocols_planned: List[Layer4Protocol] = list()
-        self.__amounts_left_per_protocol: List[int] = list()
+        self.protocols_planned: List[Layer4Protocol] = list()
+        self.amounts_left_per_protocol: List[int] = list()
         if self.baseline_data is not None:
-            self.__plan_amounts()
+            self.plan_amounts()
 
     def set_baseline_data(self, baseline_data: pd.DataFrame):
         self.baseline_data = baseline_data
-        self.__plan_amounts()
+        self.plan_amounts()
 
     def __str__(self) -> str:
         return f"Naive{self.max_deviation_from_protos * 100}PercentExfilPlanner"
 
-    def __peek_current_proto_amount(self) -> Tuple[Layer4Protocol, int]:
-        return self.__protocols_planned[0], self.__amounts_left_per_protocol[0]
+    def peek_current_proto_amount(self) -> Tuple[Layer4Protocol, int]:
+        return self.protocols_planned[0], self.amounts_left_per_protocol[0]
 
-    def __pop_current_proto_amount(self) -> Tuple[Layer4Protocol, int]:
-        return self.__protocols_planned.pop(0), self.__amounts_left_per_protocol.pop(0)
+    def pop_current_proto_amount(self) -> Tuple[Layer4Protocol, int]:
+        return self.protocols_planned.pop(0), self.amounts_left_per_protocol.pop(0)
 
-    def __cycle_current_proto_amount(self):
-        protocol, amount = self.__pop_current_proto_amount()
-        self.__protocols_planned.append(protocol)
-        self.__amounts_left_per_protocol.append(amount)
+    def cycle_current_proto_amount(self):
+        protocol, amount = self.pop_current_proto_amount()
+        self.protocols_planned.append(protocol)
+        self.amounts_left_per_protocol.append(amount)
 
-    def __take_amount_from_current_proto(self, amount: int):
-        self.__amounts_left_per_protocol[0] -= amount
-        if self.__amounts_left_per_protocol[0] <= 0:
-            self.__pop_current_proto_amount()
+    def take_amount_from_current_proto(self, amount: int):
+        self.amounts_left_per_protocol[0] -= amount
+        if self.amounts_left_per_protocol[0] <= 0:
+            self.pop_current_proto_amount()
 
-    def __plan_amounts(self):
-        self.__protocols_planned = [Layer4Protocol(ProtocolEnum(proto.split(":")[0]), int(proto.split(":")[1])) for
-                                    proto in self.baseline_data.index]
-        self.__amounts_left_per_protocol = (self.baseline_data['total_bytes'] * self.max_deviation_from_protos).astype(
+    def plan_amounts(self):
+        self.protocols_planned = [Layer4Protocol(ProtocolEnum(proto.split(":")[0]), int(proto.split(":")[1])) for
+                                  proto in self.baseline_data.index]
+        self.amounts_left_per_protocol = (self.baseline_data['total_bytes'] * self.max_deviation_from_protos).astype(
             int).values.tolist()
 
-    def __cycle_find_sufficient_amount(self, cur_amount: int) -> bool:
-        for _ in range(len(self.__amounts_left_per_protocol)):
-            if self.__peek_current_proto_amount()[1] >= cur_amount:
+    def cycle_find_sufficient_amount(self, cur_amount: int) -> bool:
+        for _ in range(len(self.amounts_left_per_protocol)):
+            if self.peek_current_proto_amount()[1] >= cur_amount:
                 return True
             else:
-                self.__cycle_current_proto_amount()
+                self.cycle_current_proto_amount()
         return False
 
     def select(self, current_data_to_exfil: bytes) -> Optional[Layer4Protocol]:
         cur_amount = len(current_data_to_exfil)
-        if self.__cycle_find_sufficient_amount(cur_amount):
-            selected_proto: Layer4Protocol = self.__peek_current_proto_amount()[0]
-            self.__take_amount_from_current_proto(cur_amount)
+        if self.cycle_find_sufficient_amount(cur_amount):
+            selected_proto: Layer4Protocol = self.peek_current_proto_amount()[0]
+            self.take_amount_from_current_proto(cur_amount)
             return selected_proto
         else:
             return None
@@ -79,8 +79,11 @@ class NaiveXPercentExfilPlanner(BaseExfilPlanner):
         """
         split by the greatest common denominator of the planned amounts
         """
-        planned_amounts_gcd: int = reduce(math.gcd, self.__amounts_left_per_protocol)
+        planned_amounts_gcd: int = reduce(math.gcd, self.amounts_left_per_protocol)
         return split_bytes_to_equal_chunks(self.exfil_data.data_to_exfiltrate, planned_amounts_gcd)
+
+    def plan(self):
+        self.plan_amounts()
 
 
 class NaiveSingleProtocolExfilPlanner(BaseExfilPlanner):
@@ -145,19 +148,19 @@ class NaiveRandomWeightsExfilPlanner(BaseExfilPlanner):
 
 class NaiveRandomUniformExfilPlanner(NaiveRandomWeightsExfilPlanner):
     def __init__(self, exfil_data: Optional[ExfilData] = None, network_io: Optional[BaseNetworkIO] = None,
-                 baseline_data: Optional[pd.DataFrame] = None):
+                 baseline_data: Optional[pd.DataFrame] = None, num_packets_for_split: int = 10):
         weights: List[int] = [1 for _ in range(len(baseline_data.index))]
-        super().__init__(exfil_data=exfil_data, network_io=network_io, baseline_data=baseline_data, weights=weights)
+        super().__init__(weights, exfil_data, network_io, baseline_data, num_packets_for_split)
 
 
 class NaiveProportionalWeightsRandomExfilPlanner(NaiveRandomWeightsExfilPlanner):
     def __init__(self, exfil_data: Optional[ExfilData] = None, network_io: Optional[BaseNetworkIO] = None,
-                 baseline_data: Optional[pd.DataFrame] = None):
+                 baseline_data: Optional[pd.DataFrame] = None, num_packets_for_split: int = 10):
         if baseline_data is not None:
             weights: List[Union[int, float]] = baseline_data.total_bytes.values.tolist()
         else:
             weights: List[Union[int, float]] = list()
-        super().__init__(exfil_data=exfil_data, network_io=network_io, baseline_data=baseline_data, weights=weights)
+        super().__init__(weights, exfil_data, network_io, baseline_data, num_packets_for_split)
 
     def set_baseline_data(self, baseline_data: pd.DataFrame):
         super().set_baseline_data(baseline_data)
