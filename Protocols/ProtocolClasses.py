@@ -11,7 +11,7 @@ class Layer4Protocol(NamedTuple):
     layer3_proto: ProtocolEnum
     dst_port: int
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.layer3_proto.value}:{self.dst_port}"
 
 
