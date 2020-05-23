@@ -11,6 +11,9 @@ class Layer4Protocol(NamedTuple):
     layer3_proto: ProtocolEnum
     dst_port: int
 
+    def __str__(self):
+        return f"{self.layer3_proto.value}:{self.dst_port}"
+
 
 def str_to_layer4_proto(proto_str: str) -> Layer4Protocol:
     layer3_proto_str, dst_port_str = proto_str.split(":")
