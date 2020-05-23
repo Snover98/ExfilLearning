@@ -17,6 +17,5 @@ class BaseNetworkIO(abc.ABC):
     def __call__(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return self.send(data, proto, data_texture)
 
-    @abc.abstractmethod
     def __str__(self) -> str:
         return type(self).__name__

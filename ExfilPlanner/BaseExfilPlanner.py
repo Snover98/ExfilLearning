@@ -32,11 +32,9 @@ class BaseExfilPlanner(abc.ABC):
     def __call__(self):
         return self.execute()
 
-    @abc.abstractmethod
     def __str__(self) -> str:
         return type(self).__name__
 
-    @abc.abstractmethod
     def split_exfil_data(self) -> Iterable[bytes]:
         return [self.exfil_data.data_to_exfiltrate]
 

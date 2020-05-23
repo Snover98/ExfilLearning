@@ -10,16 +10,10 @@ class AllTrafficNetworkIO(BaseNetworkIO):
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return True
 
-    def __str__(self) -> str:
-        return super().__str__()
-
 
 class NoTrafficNetworkIO(BaseNetworkIO):
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return False
-
-    def __str__(self) -> str:
-        return super().__str__()
 
 
 class OnlyPortProtoNetworkIO(BaseNetworkIO):

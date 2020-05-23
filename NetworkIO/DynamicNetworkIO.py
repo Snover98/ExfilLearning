@@ -14,9 +14,6 @@ class TextureNetworkIO(BaseNetworkIO):
 
         return data_texture == proto_texture
 
-    def __str__(self) -> str:
-        return super().__str__()
-
 
 class DataSizeWithinStdOfMeanForProtoNetworkIO(BaseNetworkIO):
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
@@ -24,6 +21,3 @@ class DataSizeWithinStdOfMeanForProtoNetworkIO(BaseNetworkIO):
 
         diff = abs(len(data) - proto_baseline_data.avg_packet_size_bytes)
         return diff <= proto_baseline_data.packet_size_std_bytes
-
-    def __str__(self) -> str:
-        return super().__str__()

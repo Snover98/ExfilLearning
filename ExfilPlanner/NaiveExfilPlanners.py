@@ -84,14 +84,8 @@ class NaiveSingleProtocolExfilPlanner(BaseExfilPlanner):
         super().__init__(exfil_data, network_io, baseline_data)
         self.chosen_protocol: Layer4Protocol = chosen_protocol
 
-    def __str__(self) -> str:
-        return super().__str__()
-
     def select(self, current_data_to_exfil: bytes) -> Optional[Layer4Protocol]:
         return self.chosen_protocol
-
-    def split_exfil_data(self) -> Iterable[bytes]:
-        return super().split_exfil_data()
 
 
 class NaiveMaxDataProtocolExfilPlanner(NaiveSingleProtocolExfilPlanner):
@@ -111,9 +105,6 @@ class NaiveRandomWeightsExfilPlanner(BaseExfilPlanner):
         self.weights: List[Union[int, float]] = weights
         self.protocols: List[Layer4Protocol] = [str_to_layer4_proto(proto_str) for proto_str in
                                                 self.baseline_data.index]
-
-    def __str__(self) -> str:
-        return super().__str__()
 
     def select(self, current_data_to_exfil: bytes) -> Optional[Layer4Protocol]:
         return random.choices(self.protocols, weights=self.weights)[0]
