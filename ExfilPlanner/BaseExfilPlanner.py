@@ -3,7 +3,7 @@ import abc
 
 from typing import Iterable, List, Optional, Tuple
 
-from ExfilData import ExfilData, DataTextureEnum
+from ExfilData import ExfilData
 from NetworkIO import BaseNetworkIO
 from Protocols import Layer4Protocol
 
