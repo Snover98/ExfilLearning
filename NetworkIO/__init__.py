@@ -3,3 +3,4 @@ from .SimpleNetworkIO import AllTrafficNetworkIO, NoTrafficNetworkIO, OnlyPortPr
     RandomXPercentFailNetworkIO
 from .DynamicNetworkIO import TextureNetworkIO, DataSizeWithinStdOfMeanForProtoNetworkIO, \
     NoMoreThanXPercentDeviationPerProtoNetworkIO
+from .EnsembleNetworkIO import BaseEnsembleNetworkIO, FullConsensusEnsembleNetworkIO, VotingEnsembleNetworkIO

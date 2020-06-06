@@ -1,0 +1,72 @@
+import pandas as pd
+import numpy as np
+
+import abc
+
+from Protocols import Layer4Protocol
+from ExfilData import DataTextureEnum
+from NetworkIO.BaseNetworkIO import BaseNetworkIO
+
+from typing import Optional, List, Tuple
+
+
+class BaseEnsembleNetworkIO(BaseNetworkIO):
+    def __init__(self, network_ios: List[BaseNetworkIO], baseline_data: Optional[pd.DataFrame] = None):
+        super().__init__(baseline_data)
+        self.network_ios: List[BaseNetworkIO] = network_ios
+
+    def calc_network_ios_decisions(self, data: bytes, proto: Layer4Protocol,
+                                   data_texture: DataTextureEnum) -> Tuple[bool, ...]:
+        return tuple([network_io.send(data, proto, data_texture) for network_io in self.network_ios])
+
+    def set_baseline_data(self, baseline_data: pd.DataFrame):
+        self.baseline_data = baseline_data
+
+        for network_io in self.network_ios:
+            network_io.set_baseline_data(baseline_data)
+
+    def __str__(self) -> str:
+        network_ios_names: List[str] = [str(network_io) for network_io in self.network_ios]
+        return f"{type(self).__name__}({','.join(network_ios_names)})"
+
+    @abc.abstractmethod
+    def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
+        pass
+
+
+class FullConsensusEnsembleNetworkIO(BaseEnsembleNetworkIO):
+    def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
+        return all(self.calc_network_ios_decisions(data, proto, data_texture))
+
+
+class VotingEnsembleNetworkIO(BaseEnsembleNetworkIO):
+    def __init__(self, network_ios: List[BaseNetworkIO], voting_weights: Optional[List[float]] = None,
+                 baseline_data: Optional[pd.DataFrame] = None, tie_breaker_result: Optional[bool] = True):
+        super().__init__(network_ios, baseline_data)
+        self.tie_breaker_result: bool = tie_breaker_result
+
+        if voting_weights is None:
+            voting_weights = [1 / len(network_ios)] * len(network_ios)
+
+        if len(voting_weights) != len(network_ios):
+            exception_msg = "Invalid init values for VotingEnsembleNetworkIO, len(voting_weights) != len(network_ios)"
+            exception_msg = f"{exception_msg}  ({len(voting_weights)} != {len(network_ios)})"
+            raise Exception(exception_msg)
+
+        self.voting_weights = np.array(voting_weights)
+        # normalize to make the sum 1
+        self.voting_weights = self.voting_weights / self.voting_weights.sum()
+
+    def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
+        network_ios_votes: Tuple[bool, ...] = self.calc_network_ios_decisions(data, proto, data_texture)
+
+        vote_values = np.array([int(vote) for vote in network_ios_votes])
+        weighted_votes_sum: float = vote_values @ self.voting_weights
+
+        if weighted_votes_sum == 0.5:
+            return self.tie_breaker_result
+
+        return weighted_votes_sum > 0.5
+
+
+
