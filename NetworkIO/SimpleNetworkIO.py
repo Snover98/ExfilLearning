@@ -30,6 +30,18 @@ class OnlyPortProtoNetworkIO(BaseNetworkIO):
         return f"Only{str(self.allowed_proto)}NetworkIO"
 
 
+class NotPortProtoNetworkIO(BaseNetworkIO):
+    def __init__(self, banned_proto: Layer4Protocol, baseline_data: Optional[pd.DataFrame] = None):
+        super().__init__(baseline_data)
+        self.banned_proto: Layer4Protocol = banned_proto
+
+    def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
+        return proto != self.banned_proto
+
+    def __str__(self) -> str:
+        return f"Not{str(self.banned_proto)}NetworkIO"
+
+
 class RandomXPercentFailNetworkIO(BaseNetworkIO):
     def __init__(self, fail_chance: float, baseline_data: Optional[pd.DataFrame] = None):
         super().__init__(baseline_data)
