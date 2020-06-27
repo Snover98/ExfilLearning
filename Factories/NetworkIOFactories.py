@@ -1,8 +1,9 @@
+import pandas as pd
 import abc
 
 from NetworkIO import BaseNetworkIO, BaseEnsembleNetworkIO
 
-from typing import List
+from typing import List, Optional
 
 
 class BaseNetworkIOFactory:
@@ -12,16 +13,16 @@ class BaseNetworkIOFactory:
         self.kwargs = kwargs
 
     @abc.abstractmethod
-    def create_network_io(self) -> BaseNetworkIO:
+    def create_network_io(self, baseline_data: Optional[pd.DataFrame] = None) -> BaseNetworkIO:
         pass
 
-    def __call__(self, *args, **kwargs) -> BaseNetworkIO:
-        return self.create_network_io()
+    def __call__(self, baseline_data: Optional[pd.DataFrame] = None) -> BaseNetworkIO:
+        return self.create_network_io(baseline_data)
 
 
 class NetworkIOFactory(BaseNetworkIOFactory):
-    def create_network_io(self) -> BaseNetworkIO:
-        return self.cls(*self.args, **self.kwargs)
+    def create_network_io(self, baseline_data: Optional[pd.DataFrame] = None) -> BaseNetworkIO:
+        return self.cls(*self.args, **self.kwargs, baseline_data=baseline_data)
 
 
 class EnsembleNetworkIOFactory(BaseNetworkIOFactory):
@@ -29,6 +30,6 @@ class EnsembleNetworkIOFactory(BaseNetworkIOFactory):
         super().__init__(cls, *args, **kwargs)
         self.sub_factories = sub_factories
 
-    def create_network_io(self) -> BaseEnsembleNetworkIO:
+    def create_network_io(self, baseline_data: Optional[pd.DataFrame] = None) -> BaseEnsembleNetworkIO:
         sub_network_ios = [sub_factory() for sub_factory in self.sub_factories]
-        return self.cls(sub_network_ios, *self.args, **self.kwargs)
+        return self.cls(sub_network_ios, *self.args, **self.kwargs, baseline_data=baseline_data)
