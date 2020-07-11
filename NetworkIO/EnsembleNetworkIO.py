@@ -33,6 +33,10 @@ class BaseEnsembleNetworkIO(BaseNetworkIO):
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         pass
 
+    def reset(self):
+        for network_io in self.network_ios:
+            network_io.reset()
+
 
 class FullConsensusEnsembleNetworkIO(BaseEnsembleNetworkIO):
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
