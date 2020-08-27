@@ -9,15 +9,20 @@ from NetworkIO import *
 from Protocols import *
 from ExfilData import DataTextureEnum
 
-from typing import List, Optional, Tuple, OrderedDict, Set, Callable
+from typing import List, Optional, Tuple, OrderedDict, Set, Callable, ClassVar
 
 
 class NonLearningNetworkIoEnv(gym.Env):
+    MODEL_ACTION_SPACES: ClassVar[Set[str]] = {'multidiscrete', 'discrete', 'box'}
+
     def __init__(self, baseline_datas: List[pd.DataFrame], network_io_fn: Callable[[], BaseNetworkIO],
                  all_protos: Set[str] = None, legal_packet_sizes: List[int] = None,
                  data_to_send_possible_values: List[int] = None, nop_penalty_size: float = 1e-2,
                  illegal_move_penalty_size: float = 1e-2, failure_penalty_size: float = 5,
-                 correct_transfer_reward_factor: float = 1, use_box: bool = False, add_nops: bool = False):
+                 correct_transfer_reward_factor: float = 1, model_action_space: str = 'multidiscrete',
+                 add_nops: bool = False):
+
+        assert model_action_space in self.MODEL_ACTION_SPACES
 
         if legal_packet_sizes is None:
             # all powers of 2 from 2^5 to 2^14
@@ -54,22 +59,26 @@ class NonLearningNetworkIoEnv(gym.Env):
         self.failure_penalty_size: float = failure_penalty_size
         self.correct_transfer_reward_factor: float = correct_transfer_reward_factor
 
-        self.legal_packet_sizes: List[Optional[int]] = legal_packet_sizes.copy()
+        self.legal_packet_sizes: List[Optional[int]] = sorted(legal_packet_sizes.copy())
 
         if add_nops:
             # we add NOP in each discrete action space
             self.possible_protocols.append(None)
             self.legal_packet_sizes.append(None)
 
-        if use_box:
+        self.action_space: spaces.Space
+
+        if model_action_space == 'box':
             # using box because not all algorithms support MultiDiscrete, we'll round the values to discrete actions
-            self.action_space: spaces.Space = spaces.Box(
+            self.action_space = spaces.Box(
                 low=np.array([0, 0]),
                 high=np.array([len(self.possible_protocols), len(self.legal_packet_sizes)]),
                 dtype=np.int64
             )
-        else:
-            self.action_space: spaces.Space = spaces.MultiDiscrete(
+        elif model_action_space == 'discrete':
+            self.action_space = spaces.Discrete(len(self.possible_protocols) * len(self.legal_packet_sizes))
+        elif model_action_space == 'multidiscrete':
+            self.action_space = spaces.MultiDiscrete(
                 [len(self.possible_protocols), len(self.legal_packet_sizes)]
             )
 
@@ -77,10 +86,14 @@ class NonLearningNetworkIoEnv(gym.Env):
         num_protocols_values = len(self.possible_protocols) * len(self.baseline_datas[0].columns)
         self.observation_space = spaces.Box(
             low=np.array([min(data_to_send_possible_values)] * 3 + [0] + [0] * num_protocols_values + [0] * len(
-                self.possible_protocols)),
+                self.possible_protocols) + [0] * 2
+                         ),
             high=np.array(
-                [max(data_to_send_possible_values)] * 3 + [1] + [np.inf] * num_protocols_values + [np.inf] * len(
-                    self.possible_protocols))
+                [max(data_to_send_possible_values)] * 3 + [1] + [np.inf] * num_protocols_values + [
+                    max(data_to_send_possible_values)] * len(self.possible_protocols) + [
+                    len(self.possible_protocols), len(self.legal_packet_sizes)
+                ]
+            )
         )
 
         self.current_baseline_data: Optional[pd.DataFrame] = None
@@ -93,16 +106,28 @@ class NonLearningNetworkIoEnv(gym.Env):
             {proto: 0 for proto in self.possible_protocols}
         )
         self.tot_rewards: int = 0
+        self.moves_without_action: int = 0
+        self.prev_proto_idx: int = 0
+        self.prev_amount_idx: int = 0
+        self.chosen_protocol_idx: int = 0
+        self.chosen_amount_idx: int = 0
 
     def get_current_state_observation(self) -> np.ndarray:
-        obs_with_baseline = np.append(
+        obs = np.append(
             [self.total_data_to_send, self.amount_sent, self.amount_left, self.data_texture.value],
             self.current_baseline_data.to_numpy().reshape(-1)
         )
-        obs_with_sent_per_proto = np.append(
-            obs_with_baseline, list(self.sent_values_per_proto.values())
+        obs = np.append(
+            obs, list(self.sent_values_per_proto.values())
         )
-        return obs_with_sent_per_proto
+        obs = np.append(
+            obs, [
+                self.prev_proto_idx,
+                self.prev_amount_idx,
+            ]
+        )
+
+        return obs
 
     def reset(self) -> np.ndarray:
         # set the state randomly
@@ -118,6 +143,11 @@ class NonLearningNetworkIoEnv(gym.Env):
         )
 
         self.tot_rewards = 0
+        self.moves_without_action = 0
+        self.prev_proto_idx = 0
+        self.prev_amount_idx = 0
+        self.chosen_protocol_idx = 0
+        self.chosen_amount_idx = 0
 
         # reset the networkIo
         self.network_io.set_baseline_data(self.current_baseline_data)
@@ -147,21 +177,25 @@ class NonLearningNetworkIoEnv(gym.Env):
     def action_to_proto_amount(self, action: np.ndarray) -> Tuple[Optional[Layer4Protocol], int]:
         if isinstance(self.action_space, spaces.Box):
             action = action.astype(np.int64)
+        elif isinstance(self.action_space, spaces.Discrete):
+            action = np.array(np.divmod(action, np.array([len(self.legal_packet_sizes)]))).reshape(-1)
 
         chosen_protocol_idx, chosen_amount_idx = action[0], action[1]
 
-        chosen_protocol_idx = min(chosen_protocol_idx, len(self.possible_protocols) - 1)
-        chosen_amount_idx = min(chosen_amount_idx, len(self.legal_packet_sizes) - 1)
+        self.chosen_protocol_idx = min(chosen_protocol_idx, len(self.possible_protocols) - 1)
+        self.chosen_amount_idx = min(chosen_amount_idx, len(self.legal_packet_sizes) - 1)
 
-        return self.possible_protocols[chosen_protocol_idx], self.legal_packet_sizes[chosen_amount_idx]
+        return self.possible_protocols[self.chosen_protocol_idx], self.legal_packet_sizes[self.chosen_amount_idx]
 
-    def step_result(self, reward: float, done: bool = False, info=None) -> Tuple[np.ndarray, float, bool, dict]:
+    def step_result(self, reward: float, done: bool = False, info: dict = None) -> Tuple[np.ndarray, float, bool, dict]:
         if info is None:
             info = dict()
 
         self.tot_rewards += reward
 
-        if self.tot_rewards < 0 and self.current_step > 10000:
+        self.prev_proto_idx, self.prev_amount_idx = self.chosen_amount_idx, self.chosen_protocol_idx
+
+        if self.tot_rewards < 0 and self.current_step > 1000:
             info.update(dict(success=False))
             return self.get_current_state_observation(), -self.failure_penalty_size, True, info
 
@@ -173,10 +207,13 @@ class NonLearningNetworkIoEnv(gym.Env):
         self.current_step += 1
 
         if not self.is_action_legal(chosen_protocol, chosen_amount):
-            return self.step_result(-self.illegal_move_penalty_size)
+            self.moves_without_action += 1
+            return self.step_result(-self.illegal_move_penalty_size,
+                                    info=dict(moves_without_action=self.moves_without_action))
 
         if chosen_protocol is None and chosen_amount is None:
-            return self.step_result(-self.nop_penalty_size)
+            self.moves_without_action += 1
+            return self.step_result(-self.nop_penalty_size, info=dict(moves_without_action=self.moves_without_action))
 
         send_res = self.network_io.send(bytes(chosen_amount), chosen_protocol, self.data_texture)
 

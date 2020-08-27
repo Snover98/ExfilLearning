@@ -3,4 +3,4 @@
 SupervisedLearning/params/*
 *tensorboard*
 *logs*
-*/rand_state*.pickle
+*/rand_states/*
