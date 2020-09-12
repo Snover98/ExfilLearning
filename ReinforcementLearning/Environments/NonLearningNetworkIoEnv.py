@@ -72,7 +72,7 @@ class NonLearningNetworkIoEnv(gym.Env):
             # using box because not all algorithms support MultiDiscrete, we'll round the values to discrete actions
             self.action_space = spaces.Box(
                 low=np.array([0, 0]),
-                high=np.array([len(self.possible_protocols), len(self.legal_packet_sizes)]),
+                high=np.array([len(self.possible_protocols), len(self.legal_packet_sizes)]) - np.finfo(np.float32).eps,
                 dtype=np.int64
             )
         elif model_action_space == 'discrete':
