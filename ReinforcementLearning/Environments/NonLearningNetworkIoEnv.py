@@ -85,9 +85,7 @@ class NonLearningNetworkIoEnv(gym.Env):
         # total_data_to_send, amount_sent, amount_left, data texture, statistics per protocol (num_columns * num_rows)
         num_protocols_values = len(self.possible_protocols) * len(self.baseline_datas[0].columns)
         self.observation_space = spaces.Box(
-            low=np.array([min(data_to_send_possible_values)] * 3 + [0] + [0] * num_protocols_values + [0] * len(
-                self.possible_protocols) + [0] * 2
-                         ),
+            low=np.array([0] * 3 + [0] + [0] * num_protocols_values + [0] * len(self.possible_protocols) + [0] * 2),
             high=np.array(
                 [max(data_to_send_possible_values)] * 3 + [1] + [np.inf] * num_protocols_values + [
                     max(data_to_send_possible_values)] * len(self.possible_protocols) + [
@@ -193,7 +191,7 @@ class NonLearningNetworkIoEnv(gym.Env):
 
         self.tot_rewards += reward
 
-        self.prev_proto_idx, self.prev_amount_idx = self.chosen_amount_idx, self.chosen_protocol_idx
+        self.prev_proto_idx, self.prev_amount_idx = self.chosen_protocol_idx, self.chosen_amount_idx
 
         if self.tot_rewards < 0 and self.current_step > 1000:
             info.update(dict(success=False))
