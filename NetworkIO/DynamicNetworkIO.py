@@ -17,11 +17,15 @@ class TextureNetworkIO(BaseNetworkIO):
 
 
 class DataSizeWithinStdOfMeanForProtoNetworkIO(BaseNetworkIO):
+    def __init__(self, baseline_data: Optional[pd.DataFrame] = None, std_coef: float = 1.0):
+        super().__init__(baseline_data)
+        self.std_coef: float = std_coef
+
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         proto_baseline_data: pd.Series = self.baseline_data.loc[str(proto)]
 
         diff = abs(len(data) - proto_baseline_data.avg_packet_size_bytes)
-        return diff <= proto_baseline_data.packet_size_std_bytes
+        return diff <= proto_baseline_data.packet_size_std_bytes * self.std_coef
 
 
 class NoMoreThanXPercentDeviationPerProtoNetworkIO(BaseNetworkIO):
