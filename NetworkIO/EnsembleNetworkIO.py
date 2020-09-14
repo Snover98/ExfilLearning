@@ -15,6 +15,15 @@ class BaseEnsembleNetworkIO(BaseNetworkIO):
         super().__init__(baseline_data)
         self.network_ios: List[BaseNetworkIO] = network_ios
 
+    def mask_ios(self, mask: List[bool]) -> List[BaseNetworkIO]:
+        assert len(mask) == len(self.network_ios), "Mask must be as long as number of network ios"
+        assert any(mask), "At least one network io must be enabled in the mask"
+        return [self.network_ios[idx] for idx in range(len(mask)) if mask[idx]]
+
+    def ios_subset(self, mask: List[bool]) -> 'BaseEnsembleNetworkIO':
+        masked_ios = self.mask_ios(mask)
+        return type(self)(masked_ios, self.baseline_data)
+
     def calc_network_ios_decisions(self, data: bytes, proto: Layer4Protocol,
                                    data_texture: DataTextureEnum) -> Tuple[bool, ...]:
         return tuple([network_io.send(data, proto, data_texture) for network_io in self.network_ios])
@@ -39,6 +48,14 @@ class BaseEnsembleNetworkIO(BaseNetworkIO):
 
 
 class FullConsensusEnsembleNetworkIO(BaseEnsembleNetworkIO):
+    def enforce_on_data(self, baseline_data: pd.DataFrame) -> pd.DataFrame:
+        enforced_data = baseline_data.copy()
+
+        for network_io in self.network_ios:
+            enforced_data = network_io.enforce_on_data(enforced_data)
+
+        return enforced_data
+
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return all(self.calc_network_ios_decisions(data, proto, data_texture))
 
@@ -60,6 +77,10 @@ class VotingEnsembleNetworkIO(BaseEnsembleNetworkIO):
         self.voting_weights = np.array(voting_weights)
         # normalize to make the sum 1
         self.voting_weights = self.voting_weights / self.voting_weights.sum()
+
+    def ios_subset(self, mask: List[bool]) -> 'BaseEnsembleNetworkIO':
+        masked_ios = self.mask_ios(mask)
+        return type(self)(masked_ios, self.voting_weights, self.baseline_data, self.tie_breaker_result)
 
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         network_ios_votes: Tuple[bool, ...] = self.calc_network_ios_decisions(data, proto, data_texture)

@@ -12,6 +12,9 @@ class BaseNetworkIO(abc.ABC):
     def __init__(self, baseline_data: Optional[pd.DataFrame] = None):
         self.baseline_data: pd.DataFrame = baseline_data
 
+    def enforce_on_data(self, baseline_data: pd.DataFrame) -> pd.DataFrame:
+        return baseline_data.copy()
+
     @abc.abstractmethod
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         pass

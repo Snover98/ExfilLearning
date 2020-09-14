@@ -35,6 +35,14 @@ class NotPortProtoNetworkIO(BaseNetworkIO):
         super().__init__(baseline_data)
         self.banned_proto: Layer4Protocol = banned_proto
 
+    def enforce_on_data(self, baseline_data: pd.DataFrame) -> pd.DataFrame:
+        enforced_data = baseline_data.copy()
+
+        if str(self.banned_proto) in baseline_data.index:
+            baseline_data.loc[str(self.banned_proto)] *= 0
+
+        return enforced_data
+
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return proto != self.banned_proto
 
