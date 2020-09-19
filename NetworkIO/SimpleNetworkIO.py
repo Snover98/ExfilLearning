@@ -39,7 +39,7 @@ class NotPortProtoNetworkIO(BaseNetworkIO):
         enforced_data = baseline_data.copy()
 
         if str(self.banned_proto) in baseline_data.index:
-            baseline_data.loc[str(self.banned_proto)] *= 0
+            enforced_data.loc[str(self.banned_proto)] *= 0
 
         return enforced_data
 
