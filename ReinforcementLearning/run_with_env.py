@@ -1,34 +1,44 @@
 import os
-import pickle
-import pandas as pd
-import numpy as np
-import itertools
-import tensorflow as tf
-import warnings
-from tqdm import tqdm
 import sys
+import itertools
+import pickle
+import sys
+import warnings
 from copy import deepcopy
-import click
+from enum import Enum
+from typing import Set, List, Tuple, Optional, Dict, Any, Type, Iterable, NamedTuple
 
+import click
+import numpy as np
+import pandas as pd
+import tensorflow as tf
+from sklearn.model_selection import train_test_split, KFold
 from stable_baselines import *
+from stable_baselines.common import BaseRLModel
+from stable_baselines.common.callbacks import EvalCallback, BaseCallback
 # from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines.common.evaluation import evaluate_policy
-from stable_baselines.common.vec_env import DummyVecEnv, VecEnv, SubprocVecEnv
-from stable_baselines.common.callbacks import EvalCallback, BaseCallback
-from stable_baselines.common import BaseRLModel
-from sklearn.model_selection import train_test_split, KFold
+from stable_baselines.common.vec_env import DummyVecEnv, VecEnv
+from tqdm import tqdm
 
-from ReinforcementLearning.Environments import NonLearningNetworkIoEnv
 from NetworkIO import *
 from Protocols import *
-
-from typing import Set, List, Tuple, Optional, Dict, Union, Any, Type, Iterable, NamedTuple
+from ReinforcementLearning.Environments import NonLearningNetworkIoEnv
 
 RAND_STATES_DEFAULT_DIR = 'rand_states'
 DEFAULT_RAND_STATE_PATH = os.path.join(RAND_STATES_DEFAULT_DIR, 'rand_state.pickle')
 
-MULTI_DISCRETE_MODELS = {A2C, PPO1, PPO2, TRPO, ACKTR}
-BOX_MODELS = {DDPG, SAC, TD3}
+
+class ChosenAlgoEnum(Enum):
+    PPO = 'ppo'
+    A2C = 'a2c'
+    ACKTR = 'acktr'
+    SAC = 'sac'
+    DQN = 'dqn'
+
+
+MULTI_DISCRETE_MODELS: Set[Type[BaseRLModel]] = {A2C, PPO1, PPO2, TRPO, ACKTR}
+BOX_MODELS: Set[Type[BaseRLModel]] = {DDPG, SAC, TD3}
 
 
 class ModelCreator:
@@ -138,7 +148,8 @@ class Trainer:
                 network_io_fn=lambda: FullConsensusEnsembleNetworkIO(
                     [
                         *(NotPortProtoNetworkIO(str_to_layer4_proto(proto)) for proto in protos_to_drop),
-                        NoMoreThanXPercentDeviationPerProtoNetworkIO()
+                        NoMoreThanXPercentDeviationPerProtoNetworkIO(max_deviation_from_protos=.10),
+                        # DataSizeWithinStdOfMeanForProtoNetworkIO(std_coef=3.0)
                     ]
                 ),
                 **env_kwargs
@@ -147,28 +158,37 @@ class Trainer:
 
     def create_train_eval_envs(self, **env_kwargs) -> Tuple[VecEnv, VecEnv]:
         protos_to_drop: Set[str] = {
-            "UDP:443",
-            "TCP:443",
-            "UDP:80",
-            "TCP:80"
+            f"{proto_name}:{port_number}" for proto_name, port_number in itertools.product(['UDP', 'TCP'], [80, 443])
         }
 
         baseline_datas = self.train_baseline_datas + self.eval_baseline_datas
 
-        max_pow_of_2_to_send: int = min(
-            np.log2(baseline_data.drop(protos_to_drop.intersection(baseline_data.index)).total_bytes.sum() * .1).astype(
-                np.int) for baseline_data in baseline_datas
-        )
-        valid_send_amounts: List[int] = [2 ** i for i in range(10, max_pow_of_2_to_send + 1)]
+        # no_std_protos: Set[str] = set(
+        #     # itertools.chain.from_iterable(
+        #     #     (
+        #     #         proto for proto in baseline_data.index if baseline_data.loc[str(proto)].packet_size_std_bytes == 0.0
+        #     #     ) for baseline_data in baseline_datas
+        #     # )
+        # )
+        #
+        # max_pow_of_2_to_send: int = min(
+        #     np.log2(baseline_data.drop(
+        #         (protos_to_drop | no_std_protos).intersection(baseline_data.index)).total_bytes.sum() * .10).astype(
+        #         np.int) for baseline_data in baseline_datas
+        # )
+
+        # valid_send_amounts: List[int] = [2 ** i for i in range(10, max_pow_of_2_to_send + 1)]
 
         all_protos: Set[str] = set(
             itertools.chain.from_iterable(baseline_data.index for baseline_data in baseline_datas))
 
         env: VecEnv = self.create_env(self.train_baseline_datas, protos_to_drop, all_protos=all_protos,
-                                      data_to_send_possible_values=valid_send_amounts, **env_kwargs, n_envs=self.n_envs)
+                                      # data_to_send_possible_values=valid_send_amounts,
+                                      **env_kwargs, n_envs=self.n_envs)
 
         eval_env: VecEnv = self.create_env(self.eval_baseline_datas, protos_to_drop, all_protos=all_protos,
-                                           data_to_send_possible_values=valid_send_amounts, **env_kwargs)
+                                           # data_to_send_possible_values=valid_send_amounts,
+                                           **env_kwargs)
 
         return env, eval_env
 
@@ -202,7 +222,7 @@ class Trainer:
         if self.use_eval_callback:
             model_path: str = os.path.join('non_learning_io_logs', self.model_name, "")
             eval_callback = EvalCallback(eval_env, best_model_save_path=model_path, log_path=model_path,
-                                         eval_freq=10000, verbose=0, n_eval_episodes=32,
+                                         eval_freq=2 ** 13, verbose=0, n_eval_episodes=32,
                                          deterministic=True, render=False)
             callbacks.append(eval_callback)
 
@@ -310,7 +330,11 @@ def load_numpy_rand_state(state_pickle_path: str = DEFAULT_RAND_STATE_PATH) -> N
     np.random.set_state(get_numpy_rand_state(state_pickle_path))
 
 
-def main(state_pickle_path: str = DEFAULT_RAND_STATE_PATH, run_name: str = None, chosen_algo: str = None) -> None:
+def main(state_pickle_path: str = DEFAULT_RAND_STATE_PATH, run_name: str = None,
+         chosen_algo: ChosenAlgoEnum = ChosenAlgoEnum.A2C) -> None:
+    if not os.path.exists(state_pickle_path):
+        save_numpy_rand_state(state_pickle_path)
+
     load_numpy_rand_state(state_pickle_path)
 
     seed: int = np.random.randint(np.iinfo(np.int).max)
@@ -325,9 +349,13 @@ def main(state_pickle_path: str = DEFAULT_RAND_STATE_PATH, run_name: str = None,
         pd.read_csv(os.path.join(results_path, csv_file_name), index_col=0) for csv_file_name in csv_file_names
     ]
 
+    mult_factor = 2 ** 3
+    for baseline_data in baseline_datas:
+        baseline_data[['total_bytes', 'num_packets']] *= mult_factor
+
     # baseline_data = baseline_data.drop(baseline_data[baseline_data['packet_size_std_bytes'] == 0].index)
 
-    legal_policies = ('MlpPolicy', 'MlpLstmPolicy', 'MlpLnLstmPolicy')
+    legal_actor_critic_policies = ('MlpPolicy', 'MlpLstmPolicy', 'MlpLnLstmPolicy')
     # lr_schedules = ('linear', 'constant', 'double_linear_con', 'middle_drop', 'double_middle_drop')
     lr_schedules = ('double_middle_drop',)
 
@@ -339,18 +367,21 @@ def main(state_pickle_path: str = DEFAULT_RAND_STATE_PATH, run_name: str = None,
                                  lr_schedule='double_middle_drop')
     sac_creator = ModelCreator(SAC, 'MlpPolicy', seed, tensorboard_log=r".\non_learning_io_tensorboard\\",
                                random_exploration=0.0)
+    dqn_creator = ModelCreator(DQN, 'MlpPolicy', seed, tensorboard_log=r".\non_learning_io_tensorboard\\")
 
     creator: ModelCreator
     if not chosen_algo:
         creator = a2c_creator
-    elif chosen_algo == 'ppo':
+    elif chosen_algo is chosen_algo.PPO:
         creator = ppo_creator
-    elif chosen_algo == 'a2c':
+    elif chosen_algo is chosen_algo.A2C:
         creator = a2c_creator
-    elif chosen_algo == 'acktr':
+    elif chosen_algo is chosen_algo.ACKTR:
         creator = acktr_creator
-    elif chosen_algo == 'sac':
+    elif chosen_algo is chosen_algo.SAC:
         creator = sac_creator
+    elif chosen_algo is chosen_algo.DQN:
+        creator = dqn_creator
     else:
         print("NO CHOSEN ALGO!!!!")
         return
@@ -369,9 +400,12 @@ def main(state_pickle_path: str = DEFAULT_RAND_STATE_PATH, run_name: str = None,
 
 
 @click.command()
-@click.argument('algo', type=click.Choice(['ppo', 'a2c', 'acktr', 'sac'], case_sensitive=False))
+@click.argument('algo', type=click.Choice([algo_e.name for algo_e in ChosenAlgoEnum], case_sensitive=False))
 def command(algo: str):
-    main(chosen_algo=algo.lower())
+    try:
+        main(chosen_algo=ChosenAlgoEnum[algo.upper()])
+    except KeyError:
+        print(f"No such algorithm {algo}")
 
 
 if __name__ == '__main__':
