@@ -24,10 +24,7 @@ class DataSizeWithinStdOfMeanForProtoNetworkIO(BaseNetworkIO):
     def enforce_on_data(self, baseline_data: pd.DataFrame) -> pd.DataFrame:
         enforced_data = baseline_data.copy()
 
-        for proto in baseline_data.index:
-            if baseline_data.loc[str(proto)].packet_size_std_bytes == 0.0:
-                enforced_data.loc[str(proto)] *= 0
-
+        enforced_data[baseline_data.packet_size_std_bytes == 0.0] *= 0
         return enforced_data
 
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
