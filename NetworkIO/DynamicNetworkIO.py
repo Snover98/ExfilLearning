@@ -34,6 +34,12 @@ class DataSizeWithinStdOfMeanForProtoNetworkIO(BaseNetworkIO):
         return diff <= proto_baseline_data.packet_size_std_bytes * self.std_coef
 
 
+class AllDataBetweenMinMaxNetworkIO(BaseNetworkIO):
+    def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
+        proto_baseline_data: pd.Series = self.baseline_data.loc[str(proto)]
+        return proto_baseline_data.min_packet_size_bytes <= len(data) <= proto_baseline_data.max_packet_size_bytes
+
+
 class NoMoreThanXPercentDeviationPerProtoNetworkIO(BaseNetworkIO):
     def __init__(self, max_deviation_from_protos: float = .1, baseline_data: Optional[pd.DataFrame] = None):
         super().__init__(baseline_data)
