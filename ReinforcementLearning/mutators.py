@@ -44,6 +44,15 @@ def shuffle_protocols_mutation(baseline_data: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(baseline_data.to_numpy(), columns=baseline_data.columns, index=shuffled_indices)
 
 
+def switch_2_protocols_mutation(baseline_data: pd.DataFrame) -> pd.DataFrame:
+    indices = baseline_data.index.to_numpy().tolist()
+
+    idx_to_switch = np.random.choice(np.arange(len(indices)), size=2, replace=False)
+    indices[idx_to_switch[0]], indices[idx_to_switch[1]] = indices[idx_to_switch[1]], indices[idx_to_switch[0]]
+
+    return pd.DataFrame(baseline_data.to_numpy(), columns=baseline_data.columns, index=indices)
+
+
 def change_values_by_x_percent_mutation(baseline_data: pd.DataFrame, mutation_percentage: float,
                                         features_to_change: List[str] = None,
                                         protocols_to_change: List[str] = None) -> pd.DataFrame:
