@@ -9,8 +9,11 @@ from ray import tune
 from ray.rllib.utils.test_utils import check_learning_achieved
 import ray.rllib.agents.a3c.a2c as a2c
 import ray.rllib.agents.dqn.apex as apex_dqn
+import ray.rllib.agents.dqn.dqn as dqn
 import ray.rllib.agents.ppo.ppo as ppo
+from ray.rllib.models import ModelCatalog
 
+from ReinforcementLearning.Models.batch_norm_models import TorchBatchNormModel
 from ReinforcementLearning.Environments import NonLearningNetworkIoEnv
 from NetworkIO import *
 from Protocols import *
@@ -90,17 +93,103 @@ def double_middle_drop_lr_sched(lr: float, stop_timesteps: int) -> List[Tuple[in
             (int(stop_timesteps * .75) + 1, lr * .125)]
 
 
+class Stoppers:
+    def __init__(self, stop_timesteps: int = None, stop_iters: int = None, stop_reward: float = None,
+                 episodes_without_improvement: int = None, change_delta: float = 0.05,
+                 timed_thresholds: Sequence[Tuple[int, float]] = None):
+        self.stop_timesteps = stop_timesteps
+        self.stop_iters = stop_iters
+        self.stop_reward = stop_reward
+        self.episodes_without_improvement = episodes_without_improvement
+        self.change_delta = change_delta
+        self.timed_thresholds = timed_thresholds
+        self.stoppers = dict()
+
+    def __call__(self, trial_id, result):
+        if trial_id not in self.stoppers:
+            self.stoppers[trial_id] = Stopper(self.stop_timesteps, self.stop_iters, self.stop_reward,
+                                              self.episodes_without_improvement, self.change_delta,
+                                              self.timed_thresholds)
+
+        res = self.stoppers[trial_id](trial_id, result)
+
+        if res:
+            del self.stoppers[trial_id]
+
+        return res
+
+
+class Stopper:
+    def __init__(self, stop_timesteps: int = None, stop_iters: int = None, stop_reward: float = None,
+                 episodes_without_improvement: int = None, change_delta: float = 0.05,
+                 timed_thresholds: Sequence[Tuple[int, float]] = None):
+        self.stop_timesteps = stop_timesteps
+        self.stop_iters = stop_iters
+        self.stop_reward = stop_reward
+        self.episodes_without_improvement = episodes_without_improvement
+        self.prev_reward = -np.inf
+        self.cur_episodes_without_improvement = 0
+        self.change_delta = change_delta
+        self.max_reward = -np.inf
+        self.timed_thresholds = timed_thresholds
+        self.last_time_step = 0
+
+    def __call__(self, trial_id, result):
+        if self.last_time_step >= result['timesteps_total']:
+            self.prev_reward = -np.inf
+            self.max_reward = -np.inf
+            self.cur_episodes_without_improvement = 0
+
+        self.last_time_step = result['timesteps_total']
+
+        self.max_reward = max(self.max_reward, result['episode_reward_mean'])
+
+        if self.stop_iters and result['training_iteration'] >= self.stop_iters:
+            return True
+
+        if self.stop_timesteps and result['timesteps_total'] >= self.stop_timesteps:
+            return True
+
+        if self.stop_reward and result['episode_reward_mean'] >= self.stop_reward:
+            return True
+
+        if self.episodes_without_improvement:
+            if result['episode_reward_mean'] - self.prev_reward <= self.change_delta:
+                self.cur_episodes_without_improvement += 1
+            else:
+                self.cur_episodes_without_improvement = 0
+
+            self.prev_reward = result['episode_reward_mean']
+
+            if self.cur_episodes_without_improvement >= self.episodes_without_improvement:
+                return True
+
+        if self.timed_thresholds:
+            relevant_rewards = [reward_thresh for time_step, reward_thresh in self.timed_thresholds if
+                                result['timesteps_total'] >= time_step] + [-np.inf]
+            if self.max_reward < max(relevant_rewards):
+                return True
+
+        return False
+
+
 @click.command("Run training with the non-learning environment")
-@click.option('--algo', '-a', 'algorithm', type=click.STRING, help='The algorithm to run', default='A2C')
-@click.option("--stop-iters", 'stop_iters', type=click.INT, default=100)
-@click.option("--stop-timesteps", 'stop_timesteps', type=click.INT, default=200000)
+@click.option('-a', '--algo', 'algorithm', type=click.STRING, help='The algorithm to run', default='A2C')
+@click.option('-i', "--stop-iters", 'stop_iters', type=click.INT, default=100)
+@click.option('-t', "--stop-timesteps", 'stop_timesteps', type=click.INT, default=200000)
 @click.option("--stop-reward", 'stop_reward', type=click.FloatRange(-np.inf, 1.0), default=1.0)
 @click.option('--as-test', 'as_test', is_flag=True)
 @click.option('--baselines-path', 'baselines_path', type=click.Path(exists=True, file_okay=False, resolve_path=True),
               default=None)
+@click.option('-n', '--num-samples', 'num_samples', type=click.INT, default=1)
 @click.option('-s', '--seed', 'seed', type=click.INT, default=None)
 def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: float, as_test: bool, baselines_path: str,
+         num_samples: int,
          seed: int) -> None:
+    algorithm = algorithm.upper()
+
+    ModelCatalog.register_custom_model("bn_model", TorchBatchNormModel)
+
     ray.init(include_dashboard=False)
 
     if baselines_path:
@@ -109,50 +198,72 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
 
     action_space: str = 'multidiscrete'
 
+    timed_thresholds: Optional[Sequence[Tuple[int, float]]] = None
+
     config: Dict[str, Any] = dict()
     if algorithm == 'A2C':
         config.update(a2c.A2C_DEFAULT_CONFIG)
-        # config["use_gae"] = tune.grid_search([False, True])
-        # config["model"]['fcnet_hiddens'] = tune.grid_search([[256, 256], [256, 256, 256]])
-        # config['model']['use_lstm'] = tune.grid_search([False, True])
-        # config['vf_loss_coeff'] = tune.grid_search([.25, config['vf_loss_coeff']])
-        # config['grad_clip'] = tune.grid_search([.5, config['grad_clip']])
-        # config["rollout_fragment_length"] = tune.grid_search([5, config["rollout_fragment_length"]])
 
-        config["rollout_fragment_length"] = tune.grid_search([5, 10, 20])
-        config['model']['use_lstm'] = False
+        config["rollout_fragment_length"] = 5
         config["use_gae"] = False
         config['vf_loss_coeff'] = .25
-        # config['grad_clip'] = .5
+        config["lr"] = 0.01
+        config['model']['fcnet_hiddens'] = [1024, 512, 256]
+        # timed_thresholds = [(int(1e4), -4.0), (int(3e4), -2.0), (int(5e4), -1.0)]
+        # timed_thresholds = [(int(1e4), -1), (int(5e4), 0), (int(1e5), .5)]
     elif algorithm == 'APEX':
         config.update(apex_dqn.APEX_DEFAULT_CONFIG)
-        config['model']['use_lstm'] = tune.grid_search([False, True])
-        config['num_workers'] = 2
         action_space = 'discrete'
     elif algorithm == 'PPO':
         config.update(ppo.DEFAULT_CONFIG)
+        config["lr"] = 1e-5
+        config['entropy_coeff'] = 0.01
+        config['clip_param'] = .3
+        config['model']['fcnet_hiddens'] = [256] * 3
+    elif algorithm == 'DQN':
+        config.update(dqn.DEFAULT_CONFIG)
+
+        config['hiddens'] = tune.grid_search([[256], [256, 256]])
+        config['grad_clip'] = tune.grid_search([.5, 40])
+        action_space = 'discrete'
+    elif algorithm == 'RAINBOW':
+        algorithm = 'DQN'
+        config['n_step'] = tune.grid_search([2, 5, 10])
+        config['noisy'] = True
+        config['num_atoms'] = tune.grid_search([2, 5, 10])
+        config['v_min'] = -5.0
+        config['v_max'] = 1.0
+        # config["sigma0"] = tune.grid_search([])
+
+        config['hiddens'] = tune.grid_search([[256], [256, 256]])
+        config['grad_clip'] = tune.grid_search([.5, 40])
+        action_space = 'discrete'
 
     config.update({
         "env": RayNonLearningNetworkIoEnv,
-        "env_config": env_config(baseline_datas, action_space=action_space,
-                                 std_coef=None,
-                                 use_random_io_mask=False,
-                                 # baselines_mutators=[
-                                 #     sizes_mult_mutator(8),
-                                 # ]
-                                 ),
+        "env_config": env_config(
+            baseline_datas, action_space=action_space,
+            std_coef=None,
+            use_random_io_mask=True,
+            baselines_mutators=[
+                sizes_mult_mutator(8),
+                switch_2_protocols_mutation,
+                # shuffle_protocols_mutation
+            ],
+            inplace_mutations=[True, False],
+        ),
         "framework": "torch",
-        "num_gpus": 0
+        "num_gpus": 0,
+        'num_workers': 2
     })
 
     lrs = sorted(c * 10 ** -i for i, c in itertools.product(range(2, 6), [1, 5]))
     # config["lr"] = tune.grid_search(lrs)
-    config['lr_schedule'] = tune.grid_search(
-        [double_middle_drop_lr_sched(lr, stop_timesteps) for lr in lrs] + [[(0, lr)] for lr in lrs]
-    )
+    # config['lr_schedule'] = tune.grid_search(
+    #     [double_middle_drop_lr_sched(lr, stop_timesteps) for lr in lrs] + [[(0, lr)] for lr in lrs]
+    # )
 
-    # config["lr"] = 0.01
-    # config['lr_schedule'] = double_middle_drop_lr_sched(config["lr"], stop_timesteps)
+    config['lr_schedule'] = double_middle_drop_lr_sched(config["lr"], stop_timesteps)
     # config['lr_schedule'] = tune.grid_search([None, config['lr_schedule']])
 
     rand_seeds = [238749400, 1550590419, 306522394, 664536080, 827704252, 1927293810, 1015498960, 285322805, 552328904,
@@ -167,7 +278,15 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
         # "episode_reward_mean": stop_reward,
     }
 
-    results = tune.run(algorithm, config=config, stop=stop, reuse_actors=True)
+    stop = Stoppers(
+        stop_timesteps=stop_timesteps,
+        stop_iters=stop_iters,
+        # stop_reward=stop_reward,
+        episodes_without_improvement=30,
+        timed_thresholds=timed_thresholds
+    )
+
+    results = tune.run(algorithm, config=config, stop=stop, reuse_actors=True, num_samples=num_samples)
 
     if as_test:
         check_learning_achieved(results, stop_reward)
