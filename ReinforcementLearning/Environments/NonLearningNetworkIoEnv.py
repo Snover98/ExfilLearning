@@ -9,7 +9,7 @@ from NetworkIO import *
 from Protocols import *
 from ExfilData import DataTextureEnum
 
-from typing import List, Optional, Tuple, OrderedDict, Set, Callable, ClassVar, Dict, Any
+from typing import List, Optional, Tuple, OrderedDict, Set, Callable, ClassVar, Dict, Any, Sequence
 
 
 class NonLearningNetworkIoEnv(gym.Env):
@@ -20,13 +20,16 @@ class NonLearningNetworkIoEnv(gym.Env):
                  data_to_send_possible_values: List[int] = None, nop_penalty_size: float = 1e-2,
                  illegal_move_penalty_size: float = 1e-2, failure_penalty_size: float = 5,
                  correct_transfer_reward_factor: float = 1, model_action_space: str = 'multidiscrete',
-                 add_nops: bool = False, use_random_io_mask: bool = False):
+                 add_nops: bool = False, use_random_io_mask: bool = False, required_io_idx: Sequence[int] = None):
         if legal_packet_sizes is None:
             # all powers of 2 from 2^5 to 2^14
             legal_packet_sizes = [2 ** i for i in range(5, 15)]
 
         if all_protos is None:
             all_protos = set(itertools.chain.from_iterable(baseline_data.index for baseline_data in baseline_datas))
+
+        if required_io_idx is None:
+            required_io_idx = list()
 
         self.possible_protocols: List[Optional[Layer4Protocol]] = [str_to_layer4_proto(proto_str) for proto_str in
                                                                    sorted(all_protos)]
@@ -39,6 +42,9 @@ class NonLearningNetworkIoEnv(gym.Env):
             self.network_io: BaseEnsembleNetworkIO
             self.num_network_ios = len(self.network_io.network_ios)
         self._percent_idx: int = self.__find_percent_idx()
+
+        if self._percent_idx >= 0 and self._percent_idx not in required_io_idx:
+            required_io_idx.append(self._percent_idx)
 
         self.baseline_datas: List[pd.DataFrame] = self.standardized_baselines(baseline_datas, all_protos)
 
@@ -79,6 +85,7 @@ class NonLearningNetworkIoEnv(gym.Env):
         self.chosen_amount_idx: int = 0
         self.use_random_io_mask: bool = use_random_io_mask
         self.ios_mask: List[bool] = [False] * self.num_network_ios
+        self.required_io_idx: Sequence[int] = required_io_idx.copy()
 
     @staticmethod
     def standardized_baselines(baseline_datas: List[pd.DataFrame], all_protos: Set[str]) -> List[pd.DataFrame]:
@@ -197,8 +204,8 @@ class NonLearningNetworkIoEnv(gym.Env):
             while not any(self.ios_mask):
                 self.ios_mask = np.random.choice([True, False], self.num_network_ios).tolist()
 
-            if self._percent_idx >= 0:
-                self.ios_mask[self._percent_idx] = True
+            for idx in self.required_io_idx:
+                self.ios_mask[idx] = True
 
             self.active_network_io: BaseEnsembleNetworkIO = self.network_io.ios_subset(self.ios_mask)
 
