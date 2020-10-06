@@ -13,7 +13,8 @@ import ray.rllib.agents.dqn.dqn as dqn
 import ray.rllib.agents.ppo.ppo as ppo
 from ray.rllib.models import ModelCatalog
 
-from ReinforcementLearning.Models.batch_norm_models import TorchBatchNormModel
+from ReinforcementLearning.Models.batch_norm_model import TorchBatchNormModel
+from ReinforcementLearning.Models.skip_connection_model import TorchSkipConnectionModel
 from ReinforcementLearning.Environments import NonLearningNetworkIoEnv
 from NetworkIO import *
 from Protocols import *
@@ -68,6 +69,8 @@ def env_config(baseline_datas: List[pd.DataFrame], protos_to_drop: Set[str] = No
     network_io_fns: List[NetworkIoCreator] = [
         lambda: NotPortProtoNetworkIO(str_to_layer4_proto(proto)) for proto in protos_to_drop
     ]
+    network_io_fns.append(AllDataBetweenMinMaxNetworkIO)
+    required_ios_indices: List[int] = [len(network_io_fns) - 1]
 
     if max_deviation_from_protos is not None:
         network_io_fns.append(
@@ -76,8 +79,10 @@ def env_config(baseline_datas: List[pd.DataFrame], protos_to_drop: Set[str] = No
 
     if std_coef is not None:
         network_io_fns.append(lambda: DataSizeWithinStdOfMeanForProtoNetworkIO(std_coef=std_coef))
+        required_ios_indices.append(len(network_io_fns) - 1)
 
     env_config_dict['network_io_fn'] = ensemble_network_io_creator(network_io_fns)
+    env_config_dict['required_io_idx'] = required_ios_indices
 
     # add action space
     env_config_dict['model_action_space'] = action_space
@@ -93,53 +98,22 @@ def double_middle_drop_lr_sched(lr: float, stop_timesteps: int) -> List[Tuple[in
             (int(stop_timesteps * .75) + 1, lr * .125)]
 
 
-class Stoppers:
+class TrialStopper:
     def __init__(self, stop_timesteps: int = None, stop_iters: int = None, stop_reward: float = None,
-                 episodes_without_improvement: int = None, change_delta: float = 0.05,
+                 max_episodes_without_improvement: int = None, change_delta: float = 0.05,
                  timed_thresholds: Sequence[Tuple[int, float]] = None):
         self.stop_timesteps = stop_timesteps
         self.stop_iters = stop_iters
         self.stop_reward = stop_reward
-        self.episodes_without_improvement = episodes_without_improvement
+        self.max_episodes_without_improvement = max_episodes_without_improvement
         self.change_delta = change_delta
         self.timed_thresholds = timed_thresholds
-        self.stoppers = dict()
 
-    def __call__(self, trial_id, result):
-        if trial_id not in self.stoppers:
-            self.stoppers[trial_id] = Stopper(self.stop_timesteps, self.stop_iters, self.stop_reward,
-                                              self.episodes_without_improvement, self.change_delta,
-                                              self.timed_thresholds)
-
-        res = self.stoppers[trial_id](trial_id, result)
-
-        if res:
-            del self.stoppers[trial_id]
-
-        return res
-
-
-class Stopper:
-    def __init__(self, stop_timesteps: int = None, stop_iters: int = None, stop_reward: float = None,
-                 episodes_without_improvement: int = None, change_delta: float = 0.05,
-                 timed_thresholds: Sequence[Tuple[int, float]] = None):
-        self.stop_timesteps = stop_timesteps
-        self.stop_iters = stop_iters
-        self.stop_reward = stop_reward
-        self.episodes_without_improvement = episodes_without_improvement
-        self.prev_reward = -np.inf
         self.cur_episodes_without_improvement = 0
-        self.change_delta = change_delta
+        self.prev_reward = -np.inf
         self.max_reward = -np.inf
-        self.timed_thresholds = timed_thresholds
-        self.last_time_step = 0
 
-    def __call__(self, trial_id, result):
-        if self.last_time_step >= result['timesteps_total']:
-            self.prev_reward = -np.inf
-            self.max_reward = -np.inf
-            self.cur_episodes_without_improvement = 0
-
+    def __call__(self, result):
         self.last_time_step = result['timesteps_total']
 
         self.max_reward = max(self.max_reward, result['episode_reward_mean'])
@@ -153,7 +127,7 @@ class Stopper:
         if self.stop_reward and result['episode_reward_mean'] >= self.stop_reward:
             return True
 
-        if self.episodes_without_improvement:
+        if self.max_episodes_without_improvement:
             if result['episode_reward_mean'] - self.prev_reward <= self.change_delta:
                 self.cur_episodes_without_improvement += 1
             else:
@@ -161,7 +135,7 @@ class Stopper:
 
             self.prev_reward = result['episode_reward_mean']
 
-            if self.cur_episodes_without_improvement >= self.episodes_without_improvement:
+            if self.cur_episodes_without_improvement >= self.max_episodes_without_improvement:
                 return True
 
         if self.timed_thresholds:
@@ -171,6 +145,32 @@ class Stopper:
                 return True
 
         return False
+
+
+class Stopper:
+    def __init__(self, stop_timesteps: int = None, stop_iters: int = None, stop_reward: float = None,
+                 max_episodes_without_improvement: int = None, change_delta: float = 0.05,
+                 timed_thresholds: Sequence[Tuple[int, float]] = None):
+        self.stop_timesteps = stop_timesteps
+        self.stop_iters = stop_iters
+        self.stop_reward = stop_reward
+        self.max_episodes_without_improvement = max_episodes_without_improvement
+        self.change_delta = change_delta
+        self.timed_thresholds = timed_thresholds
+        self.stoppers = dict()
+
+    def __call__(self, trial_id, result):
+        if trial_id not in self.stoppers:
+            self.stoppers[trial_id] = TrialStopper(self.stop_timesteps, self.stop_iters, self.stop_reward,
+                                                   self.max_episodes_without_improvement, self.change_delta,
+                                                   self.timed_thresholds)
+
+        stop_trial = self.stoppers[trial_id](result)
+
+        if stop_trial:
+            del self.stoppers[trial_id]
+
+        return stop_trial
 
 
 @click.command("Run training with the non-learning environment")
@@ -189,6 +189,7 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
     algorithm = algorithm.upper()
 
     ModelCatalog.register_custom_model("bn_model", TorchBatchNormModel)
+    ModelCatalog.register_custom_model("skip_model", TorchSkipConnectionModel)
 
     ray.init(include_dashboard=False)
 
@@ -204,13 +205,15 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
     if algorithm == 'A2C':
         config.update(a2c.A2C_DEFAULT_CONFIG)
 
-        config["rollout_fragment_length"] = 5
+        config["rollout_fragment_length"] = tune.grid_search([20, 50, 100])
         config["use_gae"] = False
         config['vf_loss_coeff'] = .25
         config["lr"] = 0.01
         config['model']['fcnet_hiddens'] = [1024, 512, 256]
-        # timed_thresholds = [(int(1e4), -4.0), (int(3e4), -2.0), (int(5e4), -1.0)]
+        config['min_iter_time_s'] = 20
         # timed_thresholds = [(int(1e4), -1), (int(5e4), 0), (int(1e5), .5)]
+        timed_thresholds = [(int(1e4), -4.5), (int(2e4), -2), (int(6e4), 0), (int(1e5), .5), (int(1.5e5), .7),
+                            (int(2.5e5), .9)]
     elif algorithm == 'APEX':
         config.update(apex_dqn.APEX_DEFAULT_CONFIG)
         action_space = 'discrete'
@@ -219,7 +222,8 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
         config["lr"] = 1e-5
         config['entropy_coeff'] = 0.01
         config['clip_param'] = .3
-        config['model']['fcnet_hiddens'] = [256] * 3
+        config['model']['fcnet_hiddens'] = [1024, 512, 256]
+        config["rollout_fragment_length"] = 10
     elif algorithm == 'DQN':
         config.update(dqn.DEFAULT_CONFIG)
 
@@ -247,14 +251,15 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
             use_random_io_mask=True,
             baselines_mutators=[
                 sizes_mult_mutator(8),
-                switch_2_protocols_mutation,
+                # switch_2_protocols_mutation,
                 # shuffle_protocols_mutation
             ],
-            inplace_mutations=[True, False],
+            # inplace_mutations=[True, False],
         ),
-        "framework": "torch",
+        # "framework": "torch",
         "num_gpus": 0,
-        'num_workers': 2
+        "num_envs_per_worker": 4,
+        'num_workers': 1
     })
 
     lrs = sorted(c * 10 ** -i for i, c in itertools.product(range(2, 6), [1, 5]))
@@ -269,8 +274,8 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
     rand_seeds = [238749400, 1550590419, 306522394, 664536080, 827704252, 1927293810, 1015498960, 285322805, 552328904,
                   1913151724, 841076802, 1554963668, 793707278, 692496376, 169558613, 931430758, 653645527, 115908151,
                   643336564, 262074737]
-    # config['seed'] = tune.grid_search(rand_seeds)
-    config['seed'] = seed
+    config['seed'] = tune.grid_search(rand_seeds)
+    # config['seed'] = seed
 
     stop = {
         "training_iteration": stop_iters,
@@ -278,15 +283,15 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
         # "episode_reward_mean": stop_reward,
     }
 
-    stop = Stoppers(
+    stop = Stopper(
         stop_timesteps=stop_timesteps,
         stop_iters=stop_iters,
         # stop_reward=stop_reward,
-        episodes_without_improvement=30,
+        max_episodes_without_improvement=30,
         timed_thresholds=timed_thresholds
     )
 
-    results = tune.run(algorithm, config=config, stop=stop, reuse_actors=True, num_samples=num_samples)
+    results = tune.run(algorithm, config=config, stop=stop, num_samples=num_samples)
 
     if as_test:
         check_learning_achieved(results, stop_reward)
