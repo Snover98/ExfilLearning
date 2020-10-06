@@ -25,6 +25,17 @@ class DataSizeWithinStdOfMeanForProtoNetworkIO(BaseNetworkIO):
         enforced_data = baseline_data.copy()
 
         enforced_data[baseline_data.packet_size_std_bytes == 0.0] *= 0
+
+        std_size_range = enforced_data.packet_size_std_bytes * self.std_coef
+        enforced_data.min_packet_size_bytes = enforced_data.avg_packet_size_bytes - std_size_range
+        enforced_data.max_packet_size_bytes = enforced_data.avg_packet_size_bytes + std_size_range
+
+        if not enforced_data.min_packet_size_bytes <= enforced_data.median_packet_size_bytes <= enforced_data.max_packet_size_bytes:
+            enforced_data.median_packet_size_bytes = enforced_data.avg_packet_size_bytes
+
+        for col in enforced_data.columns:
+            enforced_data[col] = enforced_data[col].astype(baseline_data[col].dtype)
+
         return enforced_data
 
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
