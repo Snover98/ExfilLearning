@@ -81,3 +81,15 @@ def rand_by_x_percent_mutator(mutation_percentage: float, features_to_change: Li
                               protocols_to_change: List[str] = None) -> Mutator:
     return lambda baseline_data: change_values_by_x_percent_mutation(baseline_data, mutation_percentage,
                                                                      features_to_change, protocols_to_change)
+
+
+__all__ = [
+    'Mutator',
+    'mutate_baselines',
+    'mult_baseline_sizes_mutation',
+    'sizes_mult_mutator',
+    'shuffle_protocols_mutation',
+    'switch_2_protocols_mutation',
+    'change_values_by_x_percent_mutation',
+    'rand_by_x_percent_mutator',
+]

@@ -20,7 +20,7 @@ from NetworkIO import *
 from Protocols import *
 from ReinforcementLearning.mutators import *
 
-from typing import List, Dict, Any, Iterable, Callable, Set, Optional, Tuple, Union
+from typing import List, Dict, Any, Iterable, Callable, Set, Optional, Tuple, Union, Sequence
 
 NetworkIoCreator = Callable[[], BaseNetworkIO]
 
@@ -94,7 +94,20 @@ def env_config(baseline_datas: List[pd.DataFrame], protos_to_drop: Set[str] = No
 
 
 def double_middle_drop_lr_sched(lr: float, stop_timesteps: int) -> List[Tuple[int, float]]:
-    return [(0, lr), (stop_timesteps // 4, 0.75 * lr), (int(stop_timesteps * .75), 0.75 * lr),
+    """
+    given current timestep `t`, we will describe the progress `p` = t/stop_timesteps
+    the current lr can be described as a function of p:
+
+    if p <= 0.25: current_lr = lr * (1 - p)
+    elif 0.25 <= p <= 0.75: current_lr = 0.75 * lr
+    else (when 0.75 < p): current_lr = 0.125 * lr
+
+    :param lr: starting learing rate
+    :param stop_timesteps: the maximum number of steps
+    :return: a list of tuples for a piecewise scheduler describing a double middle droup
+    """
+    return [(0, lr),
+            (stop_timesteps // 4, 0.75 * lr), (int(stop_timesteps * .75), 0.75 * lr),
             (int(stop_timesteps * .75) + 1, lr * .125)]
 
 
@@ -205,15 +218,15 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
     if algorithm == 'A2C':
         config.update(a2c.A2C_DEFAULT_CONFIG)
 
-        config["rollout_fragment_length"] = tune.grid_search([20, 50, 100])
+        config["rollout_fragment_length"] = 20
         config["use_gae"] = False
         config['vf_loss_coeff'] = .25
         config["lr"] = 0.01
         config['model']['fcnet_hiddens'] = [1024, 512, 256]
         config['min_iter_time_s'] = 20
         # timed_thresholds = [(int(1e4), -1), (int(5e4), 0), (int(1e5), .5)]
-        timed_thresholds = [(int(1e4), -4.5), (int(2e4), -2), (int(6e4), 0), (int(1e5), .5), (int(1.5e5), .7),
-                            (int(2.5e5), .9)]
+        timed_thresholds = [(int(1e4), -4.5), (int(2e4), -2), (int(5e4), -1), (int(6e4), 0), (int(1e5), .7),
+                            (int(1.5e5), .9)]
     elif algorithm == 'APEX':
         config.update(apex_dqn.APEX_DEFAULT_CONFIG)
         action_space = 'discrete'
@@ -256,10 +269,10 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
             ],
             # inplace_mutations=[True, False],
         ),
-        # "framework": "torch",
+        "framework": "torch",
         "num_gpus": 0,
         "num_envs_per_worker": 4,
-        'num_workers': 1
+        'num_workers': 2
     })
 
     lrs = sorted(c * 10 ** -i for i, c in itertools.product(range(2, 6), [1, 5]))
@@ -271,11 +284,15 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
     config['lr_schedule'] = double_middle_drop_lr_sched(config["lr"], stop_timesteps)
     # config['lr_schedule'] = tune.grid_search([None, config['lr_schedule']])
 
-    rand_seeds = [238749400, 1550590419, 306522394, 664536080, 827704252, 1927293810, 1015498960, 285322805, 552328904,
-                  1913151724, 841076802, 1554963668, 793707278, 692496376, 169558613, 931430758, 653645527, 115908151,
-                  643336564, 262074737]
+    rand_seeds = [1573867542, 1279368227, 1113771576, 504226755, 1932520055, 598098775, 1551650935, 1219906981,
+                  1958653182, 903728614, 1838219168, 6886813, 982347639, 183958353, 1080740567, 1734224522, 1924928242,
+                  1165210207, 1025159957, 1960263837, 573632845, 1182568447, 1331565177, 1575295545, 733520136,
+                  1970701057, 1641253728, 1501066553, 1366262917, 513142077, 459730365, 1748465922, 1079429441,
+                  177153557, 491065583, 617100648, 1006567697, 1593147683, 1842125119, 480950823, 1284430638,
+                  1207612366, 1987392727, 1610858633, 1280385235, 1876916058, 1035590347, 530618182, 1550957813,
+                  784456122]
     config['seed'] = tune.grid_search(rand_seeds)
-    # config['seed'] = seed
+    config['seed'] = seed
 
     stop = {
         "training_iteration": stop_iters,
