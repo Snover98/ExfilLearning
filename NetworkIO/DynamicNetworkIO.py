@@ -7,6 +7,10 @@ from typing import Optional, Dict
 
 
 class TextureNetworkIO(BaseNetworkIO):
+    """
+    Only allows data of the correct texture to be sent over each protocol.
+    The valid textures for each protocol are described by `textual_protocols` from `Protocols`
+    """
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         if proto in textual_protocols:
             proto_texture: DataTextureEnum = DataTextureEnum.textual
@@ -17,11 +21,25 @@ class TextureNetworkIO(BaseNetworkIO):
 
 
 class DataSizeWithinStdOfMeanForProtoNetworkIO(BaseNetworkIO):
+    """
+    For each protocol only allows data of whose size is
+    within the `std_coef` * `proto_std` of the protocols average packet size
+    """
     def __init__(self, baseline_data: Optional[pd.DataFrame] = None, std_coef: float = 1.0):
+        """
+        :param baseline_data: the baseline data of the communication on each protocol
+        :param std_coef: the coefficient multiplying the std
+        """
         super().__init__(baseline_data)
         self.std_coef: float = std_coef
 
     def enforce_on_data(self, baseline_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        zeroes all protocols that have std == 0 and adjusts the minimum, maximum and median values to the enforced range
+
+        :param baseline_data: the data to enforce the rules on
+        :return: a new data with the NetworkIO's rules enforced on it
+        """
         enforced_data = baseline_data.copy()
 
         enforced_data[baseline_data.packet_size_std_bytes == 0.0] *= 0
@@ -46,13 +64,23 @@ class DataSizeWithinStdOfMeanForProtoNetworkIO(BaseNetworkIO):
 
 
 class AllDataBetweenMinMaxNetworkIO(BaseNetworkIO):
+    """
+    Makes sure that the data size is between the minimum and maximum packet sizes in the baseline data
+    """
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         proto_baseline_data: pd.Series = self.baseline_data.loc[str(proto)]
         return proto_baseline_data.min_packet_size_bytes <= len(data) <= proto_baseline_data.max_packet_size_bytes
 
 
 class NoMoreThanXPercentDeviationPerProtoNetworkIO(BaseNetworkIO):
+    """
+    For each protocol does not allow more than X percent of the total amount that was sent over it to be sent
+    """
     def __init__(self, max_deviation_from_protos: float = .1, baseline_data: Optional[pd.DataFrame] = None):
+        """
+        :param max_deviation_from_protos: the maximum percent of each protocols total bytes that can be sent (10%=0.1)
+        :param baseline_data: the baseline data of the communication on each protocol
+        """
         super().__init__(baseline_data)
         self.max_deviation_from_protos: float = max_deviation_from_protos
 

@@ -1,6 +1,11 @@
 from Protocols.ProtocolClasses import Layer4Protocol, ProtocolEnum
 
-textual_protocols = {
+from typing import Set
+
+"""
+Describes all of the protocols that have textual data sent over them (texture-wise)
+"""
+textual_protocols: Set[Layer4Protocol] = {
     # SMTP
     Layer4Protocol(ProtocolEnum.TCP, 25),   Layer4Protocol(ProtocolEnum.UDP, 25),
     Layer4Protocol(ProtocolEnum.TCP, 587),  Layer4Protocol(ProtocolEnum.UDP, 587),

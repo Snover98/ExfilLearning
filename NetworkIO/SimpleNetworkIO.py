@@ -9,17 +9,30 @@ from typing import Optional
 
 
 class AllTrafficNetworkIO(BaseNetworkIO):
+    """
+    Allows all data to pass
+    """
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return True
 
 
 class NoTrafficNetworkIO(BaseNetworkIO):
+    """
+    Allows no data to pass
+    """
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return False
 
 
 class OnlyPortProtoNetworkIO(BaseNetworkIO):
+    """
+    Only allows a specific protocol to pass
+    """
     def __init__(self, allowed_proto: Layer4Protocol, baseline_data: Optional[pd.DataFrame] = None):
+        """
+        :param allowed_proto: the protocol that's allowed to be sent over
+        :param baseline_data: the baseline data of the communication on each protocol
+        """
         super().__init__(baseline_data)
         self.allowed_proto: Layer4Protocol = allowed_proto
 
@@ -31,7 +44,14 @@ class OnlyPortProtoNetworkIO(BaseNetworkIO):
 
 
 class NotPortProtoNetworkIO(BaseNetworkIO):
+    """
+    Allows all data to pass except for a specific protocol
+    """
     def __init__(self, banned_proto: Layer4Protocol, baseline_data: Optional[pd.DataFrame] = None):
+        """
+        :param banned_proto: the protocol that's not allowed to be sent over
+        :param baseline_data: the baseline data of the communication on each protocol
+        """
         super().__init__(baseline_data)
         self.banned_proto: Layer4Protocol = banned_proto
 
@@ -51,7 +71,15 @@ class NotPortProtoNetworkIO(BaseNetworkIO):
 
 
 class RandomXPercentFailNetworkIO(BaseNetworkIO):
+    """
+    Has a random chance to fail the passage of data
+    """
     def __init__(self, fail_chance: float, baseline_data: Optional[pd.DataFrame] = None):
+        """
+
+        :param fail_chance: the chance to fail the passage of each `send`. must have 0.0 <= fail_chance <= 1.0
+        :param baseline_data: the baseline data of the communication on each protocol
+        """
         super().__init__(baseline_data)
         self.fail_chance: float = fail_chance
 
