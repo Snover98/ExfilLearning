@@ -1,5 +1,3 @@
-import numpy as np
-import torch
 from torch import nn
 
 from ray.rllib.models.torch.misc import SlimFC
