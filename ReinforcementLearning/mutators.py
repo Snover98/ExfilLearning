@@ -67,8 +67,8 @@ def change_values_by_x_percent_mutation(baseline_data: pd.DataFrame, mutation_pe
         columns=baseline_data.columns, index=baseline_data.index)
 
     # set features and protocols that should not be changed to be multiplied by 1
-    rand_vals[set(rand_vals.columns).difference(features_to_change)] = 1.0
-    rand_vals.loc[set(rand_vals.index).difference(protocols_to_change)] = 1.0
+    rand_vals[list(set(rand_vals.columns).difference(features_to_change))] = 1.0
+    rand_vals.loc[list(set(rand_vals.index).difference(protocols_to_change))] = 1.0
 
     mutated_data = baseline_data * rand_vals
     for col in mutated_data.columns:
