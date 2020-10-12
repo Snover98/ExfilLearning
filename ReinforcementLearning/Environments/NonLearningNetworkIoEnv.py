@@ -13,14 +13,26 @@ from typing import List, Optional, Tuple, OrderedDict, Set, Callable, ClassVar, 
 
 
 class NonLearningNetworkIoEnv(gym.Env):
+    """
+    An OpenAI gym environment that randomly chooses a baseline data from a list and
+    """
+
     MODEL_ACTION_SPACES: ClassVar[Set[str]] = {'multidiscrete', 'discrete', 'box'}
 
-    def __init__(self, baseline_datas: List[pd.DataFrame], network_io_fn: Callable[[], BaseNetworkIO],
-                 all_protos: Set[str] = None, legal_packet_sizes: List[int] = None,
-                 data_to_send_possible_values: List[int] = None, nop_penalty_size: float = 1e-2,
-                 illegal_move_penalty_size: float = 1e-2, failure_penalty_size: float = 5,
-                 correct_transfer_reward_factor: float = 1, model_action_space: str = 'multidiscrete',
-                 add_nops: bool = False, use_random_io_mask: bool = False, required_io_idx: Sequence[int] = None):
+    def __init__(self,
+                 baseline_datas: List[pd.DataFrame],
+                 network_io_fn: Callable[[], BaseNetworkIO],
+                 all_protos: Set[str] = None,
+                 legal_packet_sizes: List[int] = None,
+                 data_to_send_possible_values: List[int] = None,
+                 nop_penalty_size: float = 1e-2,
+                 illegal_move_penalty_size: float = 1e-2,
+                 failure_penalty_size: float = 5,
+                 correct_transfer_reward_factor: float = 1,
+                 model_action_space: str = 'multidiscrete',
+                 add_nops: bool = False,
+                 use_random_io_mask: bool = False,
+                 required_io_idx: Sequence[int] = None):
         if legal_packet_sizes is None:
             # all powers of 2 from 2^5 to 2^14
             legal_packet_sizes = [2 ** i for i in range(5, 15)]
