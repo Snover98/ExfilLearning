@@ -15,6 +15,8 @@ from ray.rllib.models import ModelCatalog
 
 from ReinforcementLearning.Models.batch_norm_model import TorchBatchNormModel
 from ReinforcementLearning.Models.skip_connection_model import TorchSkipConnectionModel
+from ReinforcementLearning.Models.custom_weight_init_model import TorchCustomWeightsModel, \
+    custom_normc_initializer
 from ReinforcementLearning.Environments import NonLearningNetworkIoEnv
 from NetworkIO import *
 from Protocols import *
@@ -76,10 +78,10 @@ def env_config(baseline_datas: List[pd.DataFrame], protos_to_drop: Set[str] = No
         network_io_fns.append(
             lambda: NoMoreThanXPercentDeviationPerProtoNetworkIO(max_deviation_from_protos=max_deviation_from_protos)
         )
+        required_ios_indices.append(len(network_io_fns) - 1)
 
     if std_coef is not None:
         network_io_fns.append(lambda: DataSizeWithinStdOfMeanForProtoNetworkIO(std_coef=std_coef))
-        required_ios_indices.append(len(network_io_fns) - 1)
 
     env_config_dict['network_io_fn'] = ensemble_network_io_creator(network_io_fns)
     env_config_dict['required_io_idx'] = required_ios_indices
@@ -172,7 +174,7 @@ class Stopper:
         self.timed_thresholds = timed_thresholds
         self.stoppers = dict()
 
-    def __call__(self, trial_id, result):
+    def should_stop(self, trial_id, result) -> bool:
         if trial_id not in self.stoppers:
             self.stoppers[trial_id] = TrialStopper(self.stop_timesteps, self.stop_iters, self.stop_reward,
                                                    self.max_episodes_without_improvement, self.change_delta,
@@ -185,6 +187,9 @@ class Stopper:
 
         return stop_trial
 
+    def __call__(self, trial_id, result):
+        return self.should_stop(trial_id, result)
+
 
 @click.command("Run training with the non-learning environment")
 @click.option('-a', '--algo', 'algorithm', type=click.STRING, help='The algorithm to run', default='A2C')
@@ -196,19 +201,25 @@ class Stopper:
               default=None)
 @click.option('-n', '--num-samples', 'num_samples', type=click.INT, default=1)
 @click.option('-s', '--seed', 'seed', type=click.INT, default=None)
+@click.option('-e', '--eval-amount', 'eval_amount', type=click.FloatRange(0.0, 1.0), default=None)
 def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: float, as_test: bool, baselines_path: str,
-         num_samples: int,
-         seed: int) -> None:
+         num_samples: int, eval_amount: float, seed: int) -> None:
     algorithm = algorithm.upper()
 
     ModelCatalog.register_custom_model("bn_model", TorchBatchNormModel)
     ModelCatalog.register_custom_model("skip_model", TorchSkipConnectionModel)
+    ModelCatalog.register_custom_model("custom_weights", TorchCustomWeightsModel)
 
     ray.init(include_dashboard=False)
 
     if baselines_path:
         baselines_path = Path(baselines_path)
     baseline_datas: List[pd.DataFrame] = get_baselines(baselines_path)
+    all_protos: Set[str] = set(itertools.chain.from_iterable(baseline_data.index for baseline_data in baseline_datas))
+
+    eval_baselines: List[pd.DataFrame] = list()
+    if eval_amount:
+        baseline_datas, eval_baselines = train_test_split(baseline_datas, test_size=eval_amount)
 
     action_space: str = 'multidiscrete'
 
@@ -224,9 +235,8 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
         config["lr"] = 0.01
         config['model']['fcnet_hiddens'] = [1024, 512, 256]
         config['min_iter_time_s'] = 20
-        # timed_thresholds = [(int(1e4), -1), (int(5e4), 0), (int(1e5), .5)]
-        timed_thresholds = [(int(1e4), -4.5), (int(2e4), -2), (int(5e4), -1), (int(6e4), 0), (int(1e5), .7),
-                            (int(1.5e5), .9)]
+        timed_thresholds = [(int(1e4), -4.5), (int(4e4), -2), (int(6e4), -1), (int(8e4), 0), (int(1e5), .5),
+                            (int(1.2e5), .6), (int(1.5e5), .7), (int(2.5e5), .9)]
     elif algorithm == 'APEX':
         config.update(apex_dqn.APEX_DEFAULT_CONFIG)
         action_space = 'discrete'
@@ -256,24 +266,42 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
         config['grad_clip'] = tune.grid_search([.5, 40])
         action_space = 'discrete'
 
+    baselines_mutators = [
+        sizes_mult_mutator(8),
+        # rand_by_x_percent_mutator(0.01),
+        # switch_2_protocols_mutation,
+        # shuffle_protocols_mutation
+    ]
+    inplace_mutations = [True] + [False] * (len(baselines_mutators) - 1)
+
+    env_params = dict(
+        action_space=action_space,
+        std_coef=None,
+        use_random_io_mask=True,
+        baselines_mutators=baselines_mutators,
+        inplace_mutations=inplace_mutations,
+        all_protos=all_protos
+    )
+
     config.update({
         "env": RayNonLearningNetworkIoEnv,
         "env_config": env_config(
-            baseline_datas, action_space=action_space,
-            std_coef=None,
-            use_random_io_mask=True,
-            baselines_mutators=[
-                sizes_mult_mutator(8),
-                # switch_2_protocols_mutation,
-                # shuffle_protocols_mutation
-            ],
-            # inplace_mutations=[True, False],
+            baseline_datas,
+            **env_params
         ),
         "framework": "torch",
         "num_gpus": 0,
         "num_envs_per_worker": 4,
         'num_workers': 2
     })
+
+    if eval_baselines:
+        config["evaluation_config"]["env_config"] = env_config(
+            eval_baselines,
+            **env_params
+        )
+        config["evaluation_num_episodes"] = 100
+        config["evaluation_interval"] = 5
 
     lrs = sorted(c * 10 ** -i for i, c in itertools.product(range(2, 6), [1, 5]))
     # config["lr"] = tune.grid_search(lrs)
@@ -284,15 +312,15 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
     config['lr_schedule'] = double_middle_drop_lr_sched(config["lr"], stop_timesteps)
     # config['lr_schedule'] = tune.grid_search([None, config['lr_schedule']])
 
-    rand_seeds = [1573867542, 1279368227, 1113771576, 504226755, 1932520055, 598098775, 1551650935, 1219906981,
-                  1958653182, 903728614, 1838219168, 6886813, 982347639, 183958353, 1080740567, 1734224522, 1924928242,
-                  1165210207, 1025159957, 1960263837, 573632845, 1182568447, 1331565177, 1575295545, 733520136,
-                  1970701057, 1641253728, 1501066553, 1366262917, 513142077, 459730365, 1748465922, 1079429441,
-                  177153557, 491065583, 617100648, 1006567697, 1593147683, 1842125119, 480950823, 1284430638,
-                  1207612366, 1987392727, 1610858633, 1280385235, 1876916058, 1035590347, 530618182, 1550957813,
-                  784456122]
-    config['seed'] = tune.grid_search(rand_seeds)
+    rand_seeds = [565853, 2104103493, 1593411166, 2062870887, 606544299, 1297392272, 894118955, 759209631, 1951613876,
+                  571931913, 1991302785, 316008064, 1894618127, 234605346, 1972456995, 1899998980, 1288798130,
+                  1915494248, 1112988205, 311173854, 1631390566, 910695991, 1991670774, 1725533340, 1743250890,
+                  1466896085, 322769861, 1922245188, 962566318, 446335427, 1071978696, 1202354470, 1770330545,
+                  788227602, 104452329, 1431251508, 1898474473, 2145189166, 1469515549, 1517824005, 1642986198,
+                  1516401273, 1853918493, 136233403, 1289467510, 1089288981, 1736900138, 2081164597, 1342690882,
+                  9569014]
     config['seed'] = seed
+    config['seed'] = tune.grid_search(rand_seeds)
 
     stop = {
         "training_iteration": stop_iters,
@@ -304,11 +332,11 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
         stop_timesteps=stop_timesteps,
         stop_iters=stop_iters,
         # stop_reward=stop_reward,
-        max_episodes_without_improvement=30,
+        max_episodes_without_improvement=15,
         timed_thresholds=timed_thresholds
     )
 
-    results = tune.run(algorithm, config=config, stop=stop, num_samples=num_samples)
+    results = tune.run(algorithm, config=config, stop=stop, num_samples=num_samples, reuse_actors=True)
 
     if as_test:
         check_learning_achieved(results, stop_reward)
