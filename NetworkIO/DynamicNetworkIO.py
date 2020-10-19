@@ -48,10 +48,13 @@ class DataSizeWithinStdOfMeanForProtoNetworkIO(BaseNetworkIO):
 
         std_size_range = enforced_data.packet_size_std_bytes * self.std_coef
         enforced_data.min_packet_size_bytes = enforced_data.avg_packet_size_bytes - std_size_range
+        enforced_data.loc[enforced_data.min_packet_size_bytes < 1, 'min_packet_size_bytes'] = 1
         enforced_data.max_packet_size_bytes = enforced_data.avg_packet_size_bytes + std_size_range
 
-        if not enforced_data.min_packet_size_bytes <= enforced_data.median_packet_size_bytes <= enforced_data.max_packet_size_bytes:
-            enforced_data.median_packet_size_bytes = enforced_data.avg_packet_size_bytes
+        illegal_medians = (enforced_data.min_packet_size_bytes <= enforced_data.median_packet_size_bytes) & (
+                enforced_data.median_packet_size_bytes <= enforced_data.max_packet_size_bytes)
+        enforced_data.loc[illegal_medians, 'median_packet_size_bytes'] =\
+            enforced_data.avg_packet_size_bytes[illegal_medians]
 
         for col in enforced_data.columns:
             enforced_data[col] = enforced_data[col].astype(baseline_data[col].dtype)
@@ -69,6 +72,7 @@ class AllDataBetweenMinMaxNetworkIO(BaseNetworkIO):
     """
     Makes sure that the data size is between the minimum and maximum packet sizes in the baseline data
     """
+
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         proto_baseline_data: pd.Series = self.baseline_data.loc[str(proto)]
         return proto_baseline_data.min_packet_size_bytes <= len(data) <= proto_baseline_data.max_packet_size_bytes
@@ -78,6 +82,7 @@ class NoMoreThanXPercentDeviationPerProtoNetworkIO(BaseNetworkIO):
     """
     For each protocol does not allow more than X percent of the total amount that was sent over it to be sent
     """
+
     def __init__(self, max_deviation_from_protos: float = .1, baseline_data: Optional[pd.DataFrame] = None):
         """
         :param max_deviation_from_protos: the maximum percent of each protocols total bytes that can be sent (10%=0.1)

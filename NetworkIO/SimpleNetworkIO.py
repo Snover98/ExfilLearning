@@ -23,6 +23,18 @@ class NoTrafficNetworkIO(BaseNetworkIO):
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         return False
 
+    def enforce_on_data(self, baseline_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        zeroes the entire baseline
+
+        :param baseline_data: the data to enforce the rules on
+        :return: the data zeroed
+        """
+
+        enforced_data = baseline_data.copy()
+        enforced_data *= 0
+        return enforced_data
+
 
 class OnlyPortProtoNetworkIO(BaseNetworkIO):
     """
@@ -41,6 +53,18 @@ class OnlyPortProtoNetworkIO(BaseNetworkIO):
 
     def __str__(self) -> str:
         return f"Only{str(self.allowed_proto)}NetworkIO"
+
+    def enforce_on_data(self, baseline_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        zeroes the entire baseline except for the allowed protcol
+
+        :param baseline_data: the data to enforce the rules on
+        :return: the data zeroed
+        """
+
+        enforced_data = baseline_data.copy()
+        enforced_data.loc[:, [col for col in enforced_data.index if col != str(self.allowed_proto)]] *= 0
+        return enforced_data
 
 
 class NotPortProtoNetworkIO(BaseNetworkIO):
