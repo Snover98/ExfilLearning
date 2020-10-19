@@ -11,6 +11,7 @@ class TextureNetworkIO(BaseNetworkIO):
     Only allows data of the correct texture to be sent over each protocol.
     The valid textures for each protocol are described by `textual_protocols` from `Protocols`
     """
+
     def send(self, data: bytes, proto: Layer4Protocol, data_texture: DataTextureEnum) -> bool:
         if proto in textual_protocols:
             proto_texture: DataTextureEnum = DataTextureEnum.textual
@@ -25,6 +26,7 @@ class DataSizeWithinStdOfMeanForProtoNetworkIO(BaseNetworkIO):
     For each protocol only allows data of whose size is
     within the `std_coef` * `proto_std` of the protocols average packet size
     """
+
     def __init__(self, baseline_data: Optional[pd.DataFrame] = None, std_coef: float = 1.0):
         """
         :param baseline_data: the baseline data of the communication on each protocol

@@ -21,7 +21,7 @@ class BaseNetworkIO(abc.ABC):
     def enforce_on_data(self, baseline_data: pd.DataFrame) -> pd.DataFrame:
         """
         Enforces the NetworkIO's rules over the baseline data
-        By default just copies it and should be overriden by more specific IOs
+        By default just copies it and should be overridden by more specific IOs
         :param baseline_data: the data to enforce the rules on
         :return: a new data with the NetworkIO's rules enforced on it
         """

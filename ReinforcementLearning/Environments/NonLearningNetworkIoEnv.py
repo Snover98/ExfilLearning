@@ -4,12 +4,20 @@ import gym
 from gym import spaces
 import itertools
 import collections
+import warnings
+from enum import Enum
 
 from NetworkIO import *
 from Protocols import *
 from ExfilData import DataTextureEnum
 
-from typing import List, Optional, Tuple, OrderedDict, Set, Callable, ClassVar, Dict, Any, Sequence
+from typing import List, Optional, Tuple, OrderedDict, Set, Callable, ClassVar, Dict, Any, Sequence, Union
+
+
+class ModelActionSpaceEnum(Enum):
+    BOX: str = 'box'
+    DISCRETE: str = 'discrete'
+    MULTI_DISCRETE: str = 'multi_discrete'
 
 
 class NonLearningNetworkIoEnv(gym.Env):
@@ -17,7 +25,7 @@ class NonLearningNetworkIoEnv(gym.Env):
     An OpenAI gym environment that randomly chooses a baseline data from a list and
     """
 
-    MODEL_ACTION_SPACES: ClassVar[Set[str]] = {'multidiscrete', 'discrete', 'box'}
+    MODEL_ACTION_SPACES: ClassVar[Set[str]] = {e.value for e in ModelActionSpaceEnum}
 
     def __init__(self,
                  baseline_datas: List[pd.DataFrame],
@@ -29,18 +37,36 @@ class NonLearningNetworkIoEnv(gym.Env):
                  illegal_move_penalty_size: float = 1e-2,
                  failure_penalty_size: float = 5,
                  correct_transfer_reward_factor: float = 1,
-                 model_action_space: str = 'multidiscrete',
+                 model_action_space: Union[ModelActionSpaceEnum, str] = ModelActionSpaceEnum.MULTI_DISCRETE,
                  add_nops: bool = False,
                  use_random_io_mask: bool = False,
                  required_io_idx: Sequence[int] = None):
-        if legal_packet_sizes is None:
+        """
+
+        :param baseline_datas: a list of all baselines we can use for the environment
+        :param network_io_fn: a method that will output the NetworkIO we'll use
+        :param all_protos: a set of all protocols,
+        used for cases when there are protocols that do not appear in the baselines
+        :param legal_packet_sizes: the legal sizes of packets to send
+        :param data_to_send_possible_values: the possible amounts of data the environment can ask to send at the start
+        :param nop_penalty_size: the size of the penalty for a `nop` action (i.e choosing to do nothing)
+        :param illegal_move_penalty_size: the size of the penalty for choosing an invalid action
+        :param failure_penalty_size: the size of the penalty for failing to transfer data over the networkIO
+        :param correct_transfer_reward_factor: the size of the total rewards returned for correct transfer of the entire data
+        :param model_action_space: the actions space that the model requests, can be any value of:
+        'multidiscrete', 'discrete', 'box'
+        :param add_nops: a flag for if the `nop` action will be added to the environment
+        :param use_random_io_mask: a flag for if the env should randomly choose a subset of it's NetworkIOs per rest
+        :param required_io_idx: a sequence of all NetworkIOs that will always be used no matter the random subset chosen
+        """
+        if not legal_packet_sizes:
             # all powers of 2 from 2^5 to 2^14
             legal_packet_sizes = [2 ** i for i in range(5, 15)]
 
-        if all_protos is None:
+        if not all_protos:
             all_protos = set(itertools.chain.from_iterable(baseline_data.index for baseline_data in baseline_datas))
 
-        if required_io_idx is None:
+        if not required_io_idx:
             required_io_idx = list()
 
         self.possible_protocols: List[Optional[Layer4Protocol]] = [str_to_layer4_proto(proto_str) for proto_str in
@@ -53,6 +79,10 @@ class NonLearningNetworkIoEnv(gym.Env):
         if isinstance(self.network_io, BaseEnsembleNetworkIO):
             self.network_io: BaseEnsembleNetworkIO
             self.num_network_ios = len(self.network_io.network_ios)
+        elif use_random_io_mask:
+            # no need for a mask if we do not have an ensemble
+            warnings.warn("use_random_io_mask cannot work unless an ensemble NetworkIO is used")
+            use_random_io_mask = False
         self._percent_idx: int = self.__find_percent_idx()
 
         if self._percent_idx >= 0 and self._percent_idx not in required_io_idx:
@@ -60,7 +90,7 @@ class NonLearningNetworkIoEnv(gym.Env):
 
         self.baseline_datas: List[pd.DataFrame] = self.standardized_baselines(baseline_datas, all_protos)
 
-        if data_to_send_possible_values is None:
+        if not data_to_send_possible_values:
             data_to_send_possible_values = self.create_data_to_send_values()
 
         self.data_to_send_possible_values: List[int] = sorted(data_to_send_possible_values)
@@ -126,22 +156,32 @@ class NonLearningNetworkIoEnv(gym.Env):
         # all multiples of powers of 2 that can be contained in the baselines
         return [2 ** i for i in range(10, max_pow_of_2_to_send + 1)]
 
-    def create_action_space(self, model_action_space: str) -> spaces.Space:
-        action_space_assertion_msg = f"The action space must be one of {self.MODEL_ACTION_SPACES}"
-        assert model_action_space in NonLearningNetworkIoEnv.MODEL_ACTION_SPACES, action_space_assertion_msg
+    def create_action_space(self, model_action_space: Union[ModelActionSpaceEnum, str]) -> spaces.Space:
+        """
+        Creates an actions space for the environment of the type inputted to the method
 
+        :param model_action_space: the requested type action space type, must be valid
+        :return: the action space for the environment
+        """
+        if type(model_action_space) is str:
+            action_space_assertion_msg = f"The action space must be one of {self.MODEL_ACTION_SPACES}"
+            assert model_action_space in NonLearningNetworkIoEnv.MODEL_ACTION_SPACES, action_space_assertion_msg
+            model_action_space = ModelActionSpaceEnum(model_action_space)
+
+        model_action_space: ModelActionSpaceEnum
         action_space: Optional[spaces.Space] = None
 
-        if model_action_space == 'box':
-            # using box because not all algorithms support MultiDiscrete, we'll round the values to discrete actions
+        if model_action_space is ModelActionSpaceEnum.BOX:
+            # using box because not all algorithms support Discrete/MultiDiscrete,
+            # we'll round the values to discrete actions
             action_space = spaces.Box(
                 low=np.array([0, 0]),
                 high=np.array([len(self.possible_protocols), len(self.legal_packet_sizes)]) - np.finfo(np.float32).eps,
                 dtype=np.int64
             )
-        elif model_action_space == 'discrete':
+        elif model_action_space is ModelActionSpaceEnum.DISCRETE:
             action_space = spaces.Discrete(len(self.possible_protocols) * len(self.legal_packet_sizes))
-        elif model_action_space == 'multidiscrete':
+        elif model_action_space is ModelActionSpaceEnum.MULTI_DISCRETE:
             action_space = spaces.MultiDiscrete(
                 [len(self.possible_protocols), len(self.legal_packet_sizes)]
             )
@@ -150,6 +190,10 @@ class NonLearningNetworkIoEnv(gym.Env):
         return action_space
 
     def create_observation_space(self) -> spaces.Space:
+        """
+        creates the observation space for the environment
+        :return: the environment's action space
+        """
         num_protocols_values = len(self.possible_protocols) * len(self.baseline_datas[0].columns)
         # total_data_to_send, amount_sent, amount_left, data texture, statistics per protocol (num_columns * num_rows)
         # amount sent per proto (num_protos), last chosen protocol, last chosen amount
@@ -180,6 +224,10 @@ class NonLearningNetworkIoEnv(gym.Env):
         return -1
 
     def deviation_percent(self) -> Optional[float]:
+        """
+        returns the legal deviation percent of the NoMoreThanXPercentDeviationPerProtoNetworkIO, if one exists
+        :return: the deviation percent if a NoMoreThanXPercentDeviationPerProtoNetworkIO exists, otherwise None
+        """
         if isinstance(self.network_io, BaseEnsembleNetworkIO) and self._percent_idx >= 0:
             self.network_io: BaseEnsembleNetworkIO
             return self.network_io.network_ios[self._percent_idx].max_deviation_from_protos
@@ -190,6 +238,9 @@ class NonLearningNetworkIoEnv(gym.Env):
         return None
 
     def get_current_state_observation(self) -> np.ndarray:
+        """
+        :return: a numpy array for the observation of the current state
+        """
         obs = np.append(
             [self.total_data_to_send, self.amount_sent, self.amount_left, self.data_texture.value],
             self.current_baseline_data.to_numpy().reshape(-1)
@@ -207,6 +258,10 @@ class NonLearningNetworkIoEnv(gym.Env):
         return obs
 
     def mask_network_ios(self) -> None:
+        """
+        randomly chooses a subset of the ensemble's NetworkIOs,
+        always chooses the ones specified in `self._required_ios_mask`
+        """
         if self.num_network_ios == 1:
             self.ios_mask = [True]
         else:
@@ -222,6 +277,10 @@ class NonLearningNetworkIoEnv(gym.Env):
             self.active_network_io: BaseEnsembleNetworkIO = self.network_io.ios_subset(self.ios_mask)
 
     def reset(self) -> np.ndarray:
+        """
+        resets the state, randomly choosing the baseline data, amount to send, texture, and NetworkIOs
+        :return: the observation of the state after the reset
+        """
         # set the state randomly
         self.current_step = 0
         self.data_texture = np.random.choice(DataTextureEnum)

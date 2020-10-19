@@ -113,7 +113,7 @@ class VotingEnsembleNetworkIO(BaseEnsembleNetworkIO):
         if len(voting_weights) != len(network_ios):
             exception_msg = "Invalid init values for VotingEnsembleNetworkIO, len(voting_weights) != len(network_ios)"
             exception_msg = f"{exception_msg}  ({len(voting_weights)} != {len(network_ios)})"
-            raise Exception(exception_msg)
+            raise ValueError(exception_msg)
 
         self.voting_weights = np.array(voting_weights)
         # normalize to make the sum 1

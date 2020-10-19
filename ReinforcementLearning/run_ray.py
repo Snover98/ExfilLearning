@@ -51,7 +51,7 @@ def ensemble_network_io_creator(network_ios_creation_funcs: Iterable[NetworkIoCr
 
 def env_config(baseline_datas: List[pd.DataFrame], protos_to_drop: Set[str] = None,
                max_deviation_from_protos: Optional[float] = .1, std_coef: Optional[float] = 3.0,
-               action_space: str = 'multidiscrete',
+               action_space: str = 'multi_discrete',
                baselines_mutators: List[Mutator] = None, inplace_mutations: Union[bool, List[bool]] = True,
                **other_env_kwargs) -> Dict[str, Any]:
     env_config_dict: Dict[str, Any] = dict()
