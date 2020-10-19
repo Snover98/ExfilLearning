@@ -331,18 +331,36 @@ class NonLearningNetworkIoEnv(gym.Env):
         print(f"data texture:\t{self.data_texture.name}")
 
     def is_action_legal(self, chosen_protocol: Optional[Layer4Protocol], chosen_amount: Optional[int]) -> bool:
+        """
+
+        :param chosen_protocol: the chosen protocol for the action
+        :param chosen_amount: the chosen amount for the action
+        :return: True if the action is valid (i.e possible), False otherwise
+        """
+        # in this case, a nop action was chosen
         if chosen_protocol is None and chosen_amount is None:
             return True
 
+        # in this case nop was chosen for only one of the action dimensions, which is invalid
         elif chosen_protocol is None or chosen_amount is None:
             return False
 
         return chosen_amount <= self.amount_left
 
     def transfer_reward(self, amount_sent: int) -> float:
+        """
+
+        :param amount_sent: the amount of data that will be sent
+        :return: the corresponding reward to the sent amount
+        """
         return self.correct_transfer_reward_factor * (amount_sent / self.total_data_to_send)
 
-    def action_to_proto_amount(self, action: np.ndarray) -> Tuple[Optional[Layer4Protocol], int]:
+    def action_to_proto_amount(self, action: np.ndarray) -> Tuple[Optional[Layer4Protocol], Optional[int]]:
+        """
+        converts a numpy array of the action into a tuple of a chosen protocol and chosen amount
+        :param action: the numpy array encoding the action with the values representing the indices of the chosen values
+        :return: the protocol and amount corresponding to the indices encoded in the action array
+        """
         if isinstance(self.action_space, spaces.Box):
             action = action.astype(np.int64)
         elif isinstance(self.action_space, spaces.Discrete):
@@ -357,6 +375,13 @@ class NonLearningNetworkIoEnv(gym.Env):
 
     def step_result(self, reward: float, done: bool = False,
                     info: Dict[str, Any] = None) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
+        """
+        Returns the result of a step in the way that the OpenAI gym requires
+        :param reward: the reward for the step
+        :param done: a flag that is True if the episode is done
+        :param info: any other relevant info
+        :return: an observation-reward-done-info tuple as is required by the gym's `step` method
+        """
         if info is None:
             info = dict()
 
@@ -371,6 +396,12 @@ class NonLearningNetworkIoEnv(gym.Env):
         return self.get_current_state_observation(), reward, done, info
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, Dict[str, Any]]:
+        """
+        Preforms the action encoded in the inputted numpy array and returns the result.
+        If the action is valid, the amounts sent (and left) will be updated accordingly
+        :param action: the numpy array encoding the action
+        :return: the result of the step as is required by the OpenAI gym API
+        """
         chosen_protocol, chosen_amount = self.action_to_proto_amount(action)
 
         self.current_step += 1
