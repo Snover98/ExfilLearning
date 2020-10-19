@@ -88,6 +88,10 @@ class NonLearningNetworkIoEnv(gym.Env):
         if self._percent_idx >= 0 and self._percent_idx not in required_io_idx:
             required_io_idx.append(self._percent_idx)
 
+        # a mask for the required ios - here for simpler usage of the mask
+        self._required_ios_mask = np.array([False] * self.num_network_ios)
+        self._required_ios_mask[required_io_idx] = True
+
         self.baseline_datas: List[pd.DataFrame] = self.standardized_baselines(baseline_datas, all_protos)
 
         if not data_to_send_possible_values:
@@ -126,7 +130,7 @@ class NonLearningNetworkIoEnv(gym.Env):
         self.chosen_protocol_idx: int = 0
         self.chosen_amount_idx: int = 0
         self.use_random_io_mask: bool = use_random_io_mask
-        self.ios_mask: List[bool] = [False] * self.num_network_ios
+        self.ios_mask: List[bool] = self._required_ios_mask.tolist()
         self.required_io_idx: Sequence[int] = required_io_idx.copy()
 
     @staticmethod
@@ -269,10 +273,8 @@ class NonLearningNetworkIoEnv(gym.Env):
             self.ios_mask = [False] * self.num_network_ios
 
             while not any(self.ios_mask):
-                self.ios_mask = np.random.choice([True, False], self.num_network_ios).tolist()
-
-            for idx in self.required_io_idx:
-                self.ios_mask[idx] = True
+                self.ios_mask = np.random.choice([True, False], self.num_network_ios)
+            self.ios_mask = (self.ios_mask | self._required_ios_mask).tolist()
 
             self.active_network_io: BaseEnsembleNetworkIO = self.network_io.ios_subset(self.ios_mask)
 
