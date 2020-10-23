@@ -221,7 +221,7 @@ def main(algorithm: str, stop_iters: int, stop_timesteps: int, stop_reward: floa
     if eval_amount:
         baseline_datas, eval_baselines = train_test_split(baseline_datas, test_size=eval_amount)
 
-    action_space: str = 'multidiscrete'
+    action_space: str = 'multi_discrete'
 
     timed_thresholds: Optional[Sequence[Tuple[int, float]]] = None
 
