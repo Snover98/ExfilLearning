@@ -6,6 +6,9 @@ from ray.rllib.utils.annotations import override
 
 
 class TorchBatchNormModel(FullyConnectedNetwork):
+    """
+    Adds batch normalization after every layer except for the last one
+    """
     def __init__(self, obs_space, action_space, num_outputs, model_config, name):
         super().__init__(obs_space, action_space, num_outputs, model_config, name)
 
@@ -16,7 +19,8 @@ class TorchBatchNormModel(FullyConnectedNetwork):
                 layer_out_size = layer._model[0].out_features
                 hidden_layers.append(nn.BatchNorm1d(layer_out_size))
 
-        self._hidden_layers = nn.Sequential(*hidden_layers)
+        # do not add batch norm after the final layer (this is the reason for the indexing until -1)
+        self._hidden_layers = nn.Sequential(*hidden_layers[:-1])
 
     @override(FullyConnectedNetwork)
     def forward(self, input_dict, state, seq_lens):

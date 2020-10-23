@@ -16,7 +16,9 @@ def custom_normc_initializer(tensor, std=1.0):
 
 
 class TorchCustomWeightsModel(FullyConnectedNetwork):
-    """Generic fully connected network."""
+    """
+    use a weight initialization on the linear weights and biases
+    """
 
     def __init__(self, obs_space, action_space, num_outputs, model_config, name,
                  weight_init_func: Optional[TensorInitFunc] = None,

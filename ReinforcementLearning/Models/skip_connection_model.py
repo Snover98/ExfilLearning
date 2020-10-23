@@ -6,7 +6,13 @@ from ray.rllib.models.torch.modules.skip_connection import SkipConnection
 
 
 class TorchSkipConnectionModel(FullyConnectedNetwork):
+    """
+    Add skip connections to the layers
+    """
     class FanInLayer(nn.Module):
+        """
+        used for skip connections when the output dimension is smaller than the input dimension
+        """
         def __init__(self, kernel_size):
             super().__init__()
             self.kernel_size = kernel_size
